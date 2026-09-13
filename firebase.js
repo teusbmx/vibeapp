@@ -8,8 +8,6 @@ import {
   signInAnonymously,
   onAuthStateChanged,
   setPersistence,
-  browserLocalPersistence,
-  setPersistence,
   browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js';
 import {

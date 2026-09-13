@@ -974,7 +974,19 @@ import {
     try {
       await signInAnonymously(auth);
     } catch(err) {
-      showToast('Ative o login anônimo no Firebase');
+      console.error('VIBE/Firebase - erro no login anônimo:', err);
+      if (resolveAuthReady) resolveAuthReady(null);
+      const code = err?.code || '';
+      const message = err?.message || '';
+      showToast('Firebase não autenticou');
+      setTimeout(() => {
+        alert(
+          'O Firebase não conseguiu autenticar este celular.\\n\\n' +
+          'Código: ' + (code || 'sem código') + '\\n' +
+          message + '\\n\\n' +
+          'Confira: Authentication > Sign-in method > Anonymous > Ativado.'
+        );
+      }, 50);
       renderAll();
     }
   }
