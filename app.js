@@ -201,9 +201,6 @@ import {
         const img = document.createElement('img');
         img.alt = 'post';
         img.src = src;
-        // Se o URL salvo no documento estiver expirado/inválido, tenta
-        // novamente pelo caminho do Storage. Isso também cobre posts
-        // antigos que só possuem mediaKey.
         img.onerror = async ()=>{
           if(!p.mediaKey) {
             img.alt = 'midia indisponivel';
@@ -920,17 +917,15 @@ import {
   function subscribePosts(){
     if(postsUnsubscribe) postsUnsubscribe();
 
-    // Não use orderBy('createdAt') aqui: posts antigos ou criados durante
-    // uma falha de rede podem não ter esse campo e seriam omitidos da query.
-    // Carregamos a coleção e ordenamos no cliente, garantindo que TODOS os
-    // posts públicos apareçam no feed.
+    // Busca a coleção sem orderBy para não esconder documentos antigos
+    // que não tenham createdAt. A ordenação é feita no navegador.
     const q = query(collection(db, 'posts'), limit(100));
     postsUnsubscribe = onSnapshot(q, async (snap)=>{
       if(snap.empty){
         posts = SEED_POSTS.map(p=>({...p, ownerId:null}));
       } else {
         posts = snap.docs.map(d=>{
-          const data = d.data();
+          const data = d.data() || {};
           return {
             id:d.id,
             user:data.user || 'usuario',
@@ -953,10 +948,24 @@ import {
         }).sort((a,b)=>b.createdAtMs-a.createdAtMs);
       }
 
-      await loadCurrentUserState();
+      // Mostra o feed imediatamente. O estado de curtidas/salvos é
+      // carregado depois para evitar deixar a tela inteira esperando.
       renderAll();
+      try {
+        await loadCurrentUserState();
+        renderAll();
+      } catch(e) {
+        console.warn('VIBE/Firebase - estado do usuário não carregado:', e);
+      }
     }, (err)=>{
-      showToast('Erro ao conectar ao Firebase');
+      console.error('VIBE/Firebase - erro ao carregar posts:', err);
+      // O aplicativo continua utilizável mesmo se o Firestore estiver
+      // temporariamente indisponível.
+      if(!posts.length){
+        posts = SEED_POSTS.map(p=>({...p, ownerId:null}));
+        renderAll();
+      }
+      showToast('Firebase offline — feed de demonstração');
     });
   }
 
@@ -997,6 +1006,12 @@ import {
 
   async function init(){
     setPublishEnabled(false);
+
+    // A interface básica deve abrir mesmo antes do Firebase responder.
+    // Isso evita uma tela vazia em celulares/rede lenta.
+    posts = SEED_POSTS.map(p=>({...p, ownerId:null}));
+    renderAll();
+
     try {
       await signInAnonymously(auth);
     } catch(err) {
@@ -1022,7 +1037,7 @@ import {
     resolveAuthReady(user);
 
     if(!user) {
-      showToast('Não foi possível autenticar no Firebase');
+      showToast('Firebase não autenticado — modo demonstração');
       return;
     }
 
