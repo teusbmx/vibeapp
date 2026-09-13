@@ -775,6 +775,7 @@ import {
       const caption = document.getElementById('captionInput').value.trim() || 'novo momento capturado ✨';
       const loc = document.getElementById('locInput').value.trim() || 'Agora';
       if(!currentUser) throw new Error('Usuário não autenticado');
+      if(!capturedBlob || !capturedBlob.size) throw new Error('A foto não foi capturada corretamente');
 
       const extension = capturedMediaType === 'video' ? 'webm' : 'jpg';
       const mediaPath = `posts/${currentUser.uid}/${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
@@ -807,7 +808,28 @@ import {
       switchView('feed');
       showToast('Publicado!');
     } catch(err){
-      showToast('Erro ao publicar, tente novamente');
+      console.error('VIBE/Firebase - erro ao publicar:', err);
+      const code = err?.code || '';
+      let msg = 'Erro ao publicar';
+
+      if (code === 'storage/unauthorized') {
+        msg = 'Storage bloqueado pelas regras';
+      } else if (code === 'storage/bucket-not-found') {
+        msg = 'Storage não encontrado: confira o bucket';
+      } else if (code === 'storage/unauthenticated') {
+        msg = 'Firebase não autenticou este usuário';
+      } else if (code === 'storage/quota-exceeded') {
+        msg = 'Limite do Storage atingido';
+      } else if (code === 'permission-denied') {
+        msg = 'Firestore bloqueou a publicação';
+      } else if (code === 'failed-precondition') {
+        msg = 'Firebase precisa de uma configuração';
+      } else if (!currentUser) {
+        msg = 'Usuário Firebase não autenticado';
+      }
+
+      showToast(msg);
+      alert(`${msg}\\n\\nCódigo: ${code || 'sem código'}\\n${err?.message || 'Verifique o console do navegador.'}`);
     } finally {
       shareBtn.disabled = false;
       document.getElementById('uploadProgress').classList.remove('show');
