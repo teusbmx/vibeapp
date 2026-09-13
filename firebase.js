@@ -35,13 +35,18 @@ import {
   deleteObject
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js';
 
+// CONFIGURAÇÃO DO PROJETO VIBEAPP (copiada do Firebase Console)
+// Projeto: vibeapp-53553
+// Se você usar este pacote em outro projeto, substitua apenas este bloco
+// pela configuração exibida em: Configurações do projeto > Seus apps > Web.
 const firebaseConfig = {
-  apiKey: 'COLE_SUA_API_KEY',
-  authDomain: 'SEU-PROJETO.firebaseapp.com',
-  projectId: 'SEU-PROJETO',
-  storageBucket: 'COLE_O_STORAGE_BUCKET_DO_FIREBASE',
-  messagingSenderId: 'COLE_SEU_MESSAGING_SENDER_ID',
-  appId: 'COLE_SEU_APP_ID'
+  apiKey: 'AIzaSyAusA6dZbXj07ZA2Kq8nKTXwq0sqxp2A38',
+  authDomain: 'vibeapp-53553.firebaseapp.com',
+  projectId: 'vibeapp-53553',
+  storageBucket: 'vibeapp-53553.firebasestorage.app',
+  messagingSenderId: '58335475243',
+  appId: '1:58335475243:web:172650ea4c1e6db43ebd6e',
+  measurementId: 'G-XCP9RX1X7'
 };
 
 const app = initializeApp(firebaseConfig);
