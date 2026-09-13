@@ -198,7 +198,28 @@ import {
         slot.outerHTML = `<video class="post-video" src="${src}" ${p.thumb?`poster="${p.thumb}"`:''} playsinline loop muted></video><div class="play-overlay show"><svg viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)"><path d="M8 5v14l11-7Z"/></svg></div><button class="mute-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M23 9 17 15M17 9l6 6"/></svg></button>`;
         wireVideo();
       } else {
-        slot.outerHTML = `<img src="${src}" alt="post">`;
+        const img = document.createElement('img');
+        img.alt = 'post';
+        img.src = src;
+        // Se o URL salvo no documento estiver expirado/inválido, tenta
+        // novamente pelo caminho do Storage. Isso também cobre posts
+        // antigos que só possuem mediaKey.
+        img.onerror = async ()=>{
+          if(!p.mediaKey) {
+            img.alt = 'midia indisponivel';
+            return;
+          }
+          try {
+            const fallback = await getDownloadURL(ref(storage, p.mediaKey));
+            if(fallback && fallback !== img.src) {
+              mediaObjectUrls[p.mediaKey] = fallback;
+              img.src = fallback;
+            }
+          } catch(e) {
+            img.alt = 'midia indisponivel';
+          }
+        };
+        slot.replaceWith(img);
       }
     });
     function wireVideo(){
@@ -899,7 +920,11 @@ import {
   function subscribePosts(){
     if(postsUnsubscribe) postsUnsubscribe();
 
-    const q = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(100));
+    // Não use orderBy('createdAt') aqui: posts antigos ou criados durante
+    // uma falha de rede podem não ter esse campo e seriam omitidos da query.
+    // Carregamos a coleção e ordenamos no cliente, garantindo que TODOS os
+    // posts públicos apareçam no feed.
+    const q = query(collection(db, 'posts'), limit(100));
     postsUnsubscribe = onSnapshot(q, async (snap)=>{
       if(snap.empty){
         posts = SEED_POSTS.map(p=>({...p, ownerId:null}));
@@ -922,9 +947,10 @@ import {
             saved:false,
             comments:[],
             time:data.createdAt?.toDate ? data.createdAt.toDate().toLocaleDateString('pt-BR') : (data.time || 'AGORA'),
+            createdAtMs:data.createdAt?.toMillis ? data.createdAt.toMillis() : 0,
             trending:!!data.trending
           };
-        });
+        }).sort((a,b)=>b.createdAtMs-a.createdAtMs);
       }
 
       await loadCurrentUserState();
