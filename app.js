@@ -28,6 +28,11 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
   let activityUnsubscribe = null;
   let resolveAuthReady;
   const authReady = new Promise(resolve => { resolveAuthReady = resolve; });
+  let firebaseReady = false;
+  const withTimeout = (promise, ms, message) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ]);
   const mediaObjectUrls = {};
   const localSaved = new Set();
   const localLiked = new Set();
@@ -767,23 +772,30 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
   document.getElementById('shareBtn').onclick = async ()=>{
     const shareBtn = document.getElementById('shareBtn');
     shareBtn.disabled = true;
-    document.getElementById('uploadProgress').classList.add('show');
+    const progress = document.getElementById('uploadProgress');
+    const progressText = progress.querySelector('span');
+    progress.classList.remove('done');
+    progress.classList.add('show');
+    progressText.textContent = 'Conectando...';
     try{
       const caption = document.getElementById('captionInput').value.trim() || 'novo momento capturado ✨';
       const loc = document.getElementById('locInput').value.trim() || 'Agora';
       // No celular, o toque em Publicar pode acontecer antes do callback
       // onAuthStateChanged terminar. Esperamos a autenticação uma única vez.
-      await authReady;
+      if(!firebaseReady) throw new Error('Firebase ainda está conectando. Aguarde alguns segundos e tente publicar novamente.');
+      await withTimeout(authReady, 10000, 'Tempo esgotado aguardando autenticação do Firebase');
+      progressText.textContent = 'Enviando foto...';
       if(!currentUser) throw new Error('Usuário não autenticado');
       if(!capturedBlob || !capturedBlob.size) throw new Error('A foto não foi capturada corretamente');
 
       const extension = capturedMediaType === 'video' ? 'webm' : 'jpg';
       const mediaPath = `posts/${currentUser.uid}/${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
       const storageRef = ref(storage, mediaPath);
-      await uploadBytes(storageRef, capturedBlob, {
+      await withTimeout(uploadBytes(storageRef, capturedBlob, {
         contentType: capturedBlob.type || (capturedMediaType === 'video' ? 'video/webm' : 'image/jpeg')
-      });
-      const mediaUrl = await getDownloadURL(storageRef);
+      }), 30000, 'Tempo esgotado no envio da mídia para o Firebase Storage');
+      progressText.textContent = 'Finalizando...';
+      const mediaUrl = await withTimeout(getDownloadURL(storageRef), 10000, 'Tempo esgotado ao obter a URL da foto');
 
       const postData = {
         ownerId: currentUser.uid,
@@ -799,20 +811,29 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, 'posts'), postData);
+      await withTimeout(addDoc(collection(db, 'posts'), postData), 10000, 'Tempo esgotado ao salvar a publicação no Firestore');
 
       document.getElementById('previewView').classList.remove('active');
       document.getElementById('previewMediaWrap').innerHTML = '';
       document.getElementById('cameraView').classList.remove('active');
       stopStream();
       switchView('feed');
+      progress.classList.add('done');
+      progressText.textContent = 'Publicado!';
       showToast('Publicado!');
+      setTimeout(()=>progress.classList.remove('show','done'), 1200);
     } catch(err){
       console.error('VIBE/Firebase - erro ao publicar:', err);
       const code = err?.code || '';
       let msg = 'Erro ao publicar';
 
-      if (code === 'storage/unauthorized') {
+      if (err?.message?.includes('Tempo esgotado no envio')) {
+        msg = 'O envio da foto demorou demais. Verifique a conexão e o Firebase Storage';
+      } else if (err?.message?.includes('Tempo esgotado aguardando autenticação')) {
+        msg = 'Firebase demorou para autenticar. Recarregue a página e tente novamente';
+      } else if (err?.message?.includes('Tempo esgotado ao salvar')) {
+        msg = 'Firebase demorou para salvar a publicação';
+      } else if (code === 'storage/unauthorized') {
         msg = 'Storage bloqueado pelas regras';
       } else if (code === 'storage/bucket-not-found') {
         msg = 'Storage não encontrado: confira o bucket';
@@ -832,7 +853,7 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
       alert(`${msg}\\n\\nCódigo: ${code || 'sem código'}\\n${err?.message || 'Verifique o console do navegador.'}`);
     } finally {
       shareBtn.disabled = false;
-      document.getElementById('uploadProgress').classList.remove('show');
+      progress.classList.remove('show','done');
     }
   };
 
@@ -998,6 +1019,7 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
         getDoc, getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction,
         where, ref, uploadBytes, getDownloadURL, deleteObject
       } = fb);
+      firebaseReady = true;
 
       onAuthStateChanged(auth, async (user)=>{
         currentUser = user;
@@ -1019,6 +1041,13 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
       setPublishEnabled(false);
     }
   }
+
+  window.addEventListener('error', (event)=>{
+    console.error('VIBE erro global:', event.error || event.message);
+  });
+  window.addEventListener('unhandledrejection', (event)=>{
+    console.error('VIBE promessa rejeitada:', event.reason);
+  });
 
   init();
 })();
