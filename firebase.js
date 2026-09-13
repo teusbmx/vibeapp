@@ -31,6 +31,7 @@ import {
   getStorage,
   ref,
   uploadBytes,
+  uploadBytesResumable,
   getDownloadURL,
   deleteObject
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-storage.js';
@@ -79,6 +80,7 @@ export {
   where,
   ref,
   uploadBytes,
+  uploadBytesResumable,
   getDownloadURL,
   deleteObject
 };

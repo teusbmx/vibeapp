@@ -1,5 +1,5 @@
 let auth, db, storage;
-let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, deleteDoc, getDoc, getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction, where, ref, uploadBytes, getDownloadURL, deleteObject;
+let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, deleteDoc, getDoc, getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction, where, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject;
 
 (function(){
   const GRADIENTS = [
@@ -791,9 +791,37 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
       const extension = capturedMediaType === 'video' ? 'webm' : 'jpg';
       const mediaPath = `posts/${currentUser.uid}/${Date.now()}_${Math.random().toString(36).slice(2)}.${extension}`;
       const storageRef = ref(storage, mediaPath);
-      await withTimeout(uploadBytes(storageRef, capturedBlob, {
-        contentType: capturedBlob.type || (capturedMediaType === 'video' ? 'video/webm' : 'image/jpeg')
-      }), 30000, 'Tempo esgotado no envio da mídia para o Firebase Storage');
+      // Upload resumível: evita o falso travamento do uploadBytes() e mostra progresso real.
+      progressText.textContent = 'Enviando foto... 0%';
+      const uploadTask = uploadBytesResumable(storageRef, capturedBlob, {
+        contentType: capturedBlob.type || (capturedMediaType === 'video' ? 'video/webm' : 'image/jpeg'),
+        cacheControl: 'public,max-age=31536000'
+      });
+      await new Promise((resolve, reject) => {
+        let finished = false;
+        const timer = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          try { uploadTask.cancel(); } catch(e) {}
+          const e = new Error('O Firebase Storage não respondeu a tempo. Verifique se o Storage foi criado/ativado no projeto.');
+          e.code = 'storage/retry-limit-exceeded';
+          reject(e);
+        }, 120000);
+        uploadTask.on('state_changed', (snapshot) => {
+          const pct = snapshot.totalBytes ? Math.round(snapshot.bytesTransferred / snapshot.totalBytes * 100) : 0;
+          progressText.textContent = `Enviando foto... ${pct}%`;
+        }, (err) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          reject(err);
+        }, () => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          resolve();
+        });
+      });
       progressText.textContent = 'Finalizando...';
       const mediaUrl = await withTimeout(getDownloadURL(storageRef), 10000, 'Tempo esgotado ao obter a URL da foto');
 
@@ -841,6 +869,10 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
         msg = 'Firebase não autenticou este usuário';
       } else if (code === 'storage/quota-exceeded') {
         msg = 'Limite do Storage atingido';
+      } else if (code === 'storage/retry-limit-exceeded') {
+        msg = 'O Firebase Storage não respondeu. Verifique se o Storage está ativado no projeto e tente novamente';
+      } else if (code === 'storage/canceled') {
+        msg = 'O envio da foto foi cancelado';
       } else if (code === 'permission-denied') {
         msg = 'Firestore bloqueou a publicação';
       } else if (code === 'failed-precondition') {
@@ -1017,7 +1049,7 @@ let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, dele
         auth, db, storage,
         signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, deleteDoc,
         getDoc, getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction,
-        where, ref, uploadBytes, getDownloadURL, deleteObject
+        where, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject
       } = fb);
       firebaseReady = true;
 
