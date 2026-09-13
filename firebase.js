@@ -52,11 +52,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-try {
-  await setPersistence(auth, browserLocalPersistence);
-} catch (e) {
+setPersistence(auth, browserLocalPersistence).catch((e) => {
   console.warn('Persistência local do Firebase Auth indisponível:', e);
-}
+});
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 

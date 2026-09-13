@@ -1,28 +1,5 @@
-import {
-  auth,
-  db,
-  storage,
-  signInAnonymously,
-  onAuthStateChanged,
-  collection,
-  doc,
-  addDoc,
-  setDoc,
-  deleteDoc,
-  getDoc,
-  getDocs,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  serverTimestamp,
-  runTransaction,
-  where,
-  ref,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject
-} from './firebase.js';
+let auth, db, storage;
+let signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, deleteDoc, getDoc, getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction, where, ref, uploadBytes, getDownloadURL, deleteObject;
 
 (function(){
   const GRADIENTS = [
@@ -1005,46 +982,43 @@ import {
   }
 
   async function init(){
+    // Desenha a interface primeiro. Uma falha/rede lenta do Firebase nunca deve
+    // impedir que o VIBE abra.
     setPublishEnabled(false);
-
-    // A interface básica deve abrir mesmo antes do Firebase responder.
-    // Isso evita uma tela vazia em celulares/rede lenta.
     posts = SEED_POSTS.map(p=>({...p, ownerId:null}));
     renderAll();
 
     try {
+      // Carregamento dinâmico: se o CDN do Firebase estiver indisponível,
+      // o app continua abrindo em modo demonstração.
+      const fb = await import('./firebase.js');
+      ({
+        auth, db, storage,
+        signInAnonymously, onAuthStateChanged, collection, doc, addDoc, setDoc, deleteDoc,
+        getDoc, getDocs, query, orderBy, limit, onSnapshot, serverTimestamp, runTransaction,
+        where, ref, uploadBytes, getDownloadURL, deleteObject
+      } = fb);
+
+      onAuthStateChanged(auth, async (user)=>{
+        currentUser = user;
+        resolveAuthReady(user);
+        if(!user) {
+          showToast('Firebase não autenticado — modo demonstração');
+          return;
+        }
+        await loadPosts();
+        subscribePosts();
+        subscribeActivity();
+      });
+
       await signInAnonymously(auth);
     } catch(err) {
-      console.error('VIBE/Firebase - erro no login anônimo:', err);
-      if (resolveAuthReady) resolveAuthReady(null);
-      const code = err?.code || '';
-      const message = err?.message || '';
-      showToast('Firebase não autenticou');
-      setTimeout(() => {
-        alert(
-          'O Firebase não conseguiu autenticar este celular.\\n\\n' +
-          'Código: ' + (code || 'sem código') + '\\n' +
-          message + '\\n\\n' +
-          'Confira: Authentication > Sign-in method > Anonymous > Ativado.'
-        );
-      }, 50);
-      renderAll();
+      console.error('VIBE/Firebase - inicialização/login indisponível:', err);
+      resolveAuthReady(null);
+      showToast('Modo demonstração — Firebase indisponível');
+      setPublishEnabled(false);
     }
   }
-
-  onAuthStateChanged(auth, async (user)=>{
-    currentUser = user;
-    resolveAuthReady(user);
-
-    if(!user) {
-      showToast('Firebase não autenticado — modo demonstração');
-      return;
-    }
-
-    await loadPosts();
-    subscribePosts();
-    subscribeActivity();
-  });
 
   init();
 })();
