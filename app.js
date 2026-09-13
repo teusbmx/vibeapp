@@ -49,6 +49,8 @@ import {
   let currentUser = null;
   let postsUnsubscribe = null;
   let activityUnsubscribe = null;
+  let resolveAuthReady;
+  const authReady = new Promise(resolve => { resolveAuthReady = resolve; });
   const mediaObjectUrls = {};
   const localSaved = new Set();
   const localLiked = new Set();
@@ -774,6 +776,9 @@ import {
     try{
       const caption = document.getElementById('captionInput').value.trim() || 'novo momento capturado ✨';
       const loc = document.getElementById('locInput').value.trim() || 'Agora';
+      // No celular, o toque em Publicar pode acontecer antes do callback
+      // onAuthStateChanged terminar. Esperamos a autenticação uma única vez.
+      await authReady;
       if(!currentUser) throw new Error('Usuário não autenticado');
       if(!capturedBlob || !capturedBlob.size) throw new Error('A foto não foi capturada corretamente');
 
@@ -958,7 +963,14 @@ import {
     }, ()=>{});
   }
 
+  function setPublishEnabled(enabled){
+    document.querySelectorAll('[data-publish], #publishBtn, #btnPublish').forEach(btn=>{
+      btn.disabled = !enabled;
+    });
+  }
+
   async function init(){
+    setPublishEnabled(false);
     try {
       await signInAnonymously(auth);
     } catch(err) {
@@ -969,7 +981,12 @@ import {
 
   onAuthStateChanged(auth, async (user)=>{
     currentUser = user;
-    if(!user) return;
+    resolveAuthReady(user);
+
+    if(!user) {
+      showToast('Não foi possível autenticar no Firebase');
+      return;
+    }
 
     await loadPosts();
     subscribePosts();

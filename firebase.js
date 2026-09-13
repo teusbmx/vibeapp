@@ -6,7 +6,11 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.1.0/firebas
 import {
   getAuth,
   signInAnonymously,
-  onAuthStateChanged
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
+  setPersistence,
+  browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js';
 import {
   getFirestore,
@@ -45,12 +49,19 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+try {
+  await setPersistence(auth, browserLocalPersistence);
+} catch (e) {
+  console.warn('Persistência local do Firebase Auth indisponível:', e);
+}
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
 export {
   signInAnonymously,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
   collection,
   doc,
   addDoc,
