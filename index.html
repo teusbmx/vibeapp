@@ -370,6 +370,84 @@
   .upload-progress.show{ display:flex; }
   .spinner{ width:38px;height:38px; border-radius:50%; border:3px solid var(--stroke); border-top-color:var(--cyan); animation:spin 0.8s linear infinite; }
   .upload-progress span{ font-size:12.5px; color:var(--muted); }
+
+  /* ========== AUTH SCREEN ========== */
+  .auth-screen{
+    position:absolute; inset:0; z-index:100;
+    background:linear-gradient(165deg, #0B0B14 0%, #07070C 50%, #0A0612 100%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px 22px; padding-top:calc(env(safe-area-inset-top,0px) + 24px);
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+  .auth-screen.hidden{ display:none; }
+  .auth-logo{
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:42px; letter-spacing:1px;
+    background:linear-gradient(100deg, var(--cyan), var(--violet), var(--magenta), var(--lime), var(--cyan));
+    background-size:300% auto; -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation:hueflow 6s linear infinite; margin-bottom:6px;
+  }
+  .auth-tagline{ font-size:13px; color:var(--muted); margin-bottom:28px; text-align:center; }
+  .auth-card{
+    width:100%; max-width:340px;
+    background:var(--glass); border:1px solid var(--stroke); border-radius:28px;
+    padding:22px 20px 18px; backdrop-filter:blur(20px);
+    box-shadow:0 24px 60px -20px rgba(0,0,0,0.7);
+  }
+  .auth-tabs{ display:flex; gap:6px; margin-bottom:18px; background:rgba(0,0,0,0.25); border-radius:16px; padding:4px; }
+  .auth-tab{
+    flex:1; text-align:center; padding:10px; border-radius:12px; border:none; cursor:pointer;
+    font-family:'Space Grotesk'; font-weight:600; font-size:13.5px; color:var(--muted); background:transparent;
+  }
+  .auth-tab.active{ color:var(--text); background:var(--glass-2); box-shadow:inset 0 0 0 1px rgba(255,255,255,0.12); }
+  .auth-field{ margin-bottom:12px; }
+  .auth-field label{ display:block; font-size:11.5px; color:var(--muted); margin-bottom:5px; font-weight:500; letter-spacing:0.3px; }
+  .auth-field input{
+    width:100%; background:rgba(0,0,0,0.35); border:1px solid var(--stroke); border-radius:14px;
+    padding:12px 14px; color:var(--text); font-size:14.5px; font-family:'Inter'; outline:none;
+    transition:border-color 0.2s;
+  }
+  .auth-field input:focus{ border-color:rgba(77,232,255,0.45); }
+  .auth-field input::placeholder{ color:rgba(141,137,166,0.7); }
+  .auth-error{
+    display:none; background:rgba(255,92,108,0.12); border:1px solid rgba(255,92,108,0.35);
+    color:var(--danger); font-size:12.5px; padding:10px 12px; border-radius:12px; margin-bottom:12px; line-height:1.35;
+  }
+  .auth-error.show{ display:block; }
+  .auth-btn{
+    width:100%; border:none; padding:13px; border-radius:16px; cursor:pointer;
+    font-family:'Space Grotesk'; font-weight:700; font-size:14.5px; color:#0A0A10;
+    background:linear-gradient(120deg, var(--cyan), var(--magenta), var(--lime));
+    background-size:200% auto; animation:hueflow 5s linear infinite;
+    margin-top:4px; transition:opacity 0.2s, transform 0.15s;
+  }
+  .auth-btn:disabled{ opacity:0.55; cursor:not-allowed; }
+  .auth-btn:active{ transform:scale(0.98); }
+  .auth-divider{
+    display:flex; align-items:center; gap:12px; margin:16px 0 14px; color:var(--muted); font-size:12px;
+  }
+  .auth-divider::before, .auth-divider::after{
+    content:''; flex:1; height:1px; background:var(--stroke);
+  }
+  .auth-google{
+    width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
+    background:var(--glass-2); border:1px solid var(--stroke); border-radius:16px;
+    padding:12px; color:var(--text); font-family:'Space Grotesk'; font-weight:600; font-size:13.5px;
+    cursor:pointer; transition:background 0.2s;
+  }
+  .auth-google:hover{ background:rgba(255,255,255,0.12); }
+  .auth-google svg{ width:18px; height:18px; }
+  .auth-hint{ text-align:center; font-size:12px; color:var(--muted); margin-top:16px; line-height:1.4; }
+  .auth-hint button{ background:none; border:none; color:var(--cyan); font-weight:600; cursor:pointer; font-size:12px; }
+  .auth-loading{
+    position:absolute; inset:0; background:rgba(7,7,12,0.7); display:none; align-items:center; justify-content:center;
+    border-radius:28px; z-index:2;
+  }
+  .auth-loading.show{ display:flex; }
+  .profile-edit-btn{
+    margin:0 20px 12px; width:calc(100% - 40px); border:1px solid var(--stroke); background:var(--glass);
+    color:var(--text); border-radius:14px; padding:10px; font-family:'Space Grotesk'; font-weight:600; font-size:13px; cursor:pointer;
+  }
+
 </style>
 </head>
 <body>
@@ -379,6 +457,52 @@
 <div class="bg-blob b3"></div>
 
 <div class="phone" id="phone">
+
+  <!-- AUTH SCREEN -->
+  <div class="auth-screen" id="authScreen">
+    <div class="auth-logo">VIBE</div>
+    <div class="auth-tagline">Sua rede social futurista</div>
+    <div class="auth-card" style="position:relative;">
+      <div class="auth-loading" id="authLoading"><div class="spinner"></div></div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth="login" id="tabLogin">Entrar</button>
+        <button class="auth-tab" data-auth="register" id="tabRegister">Criar conta</button>
+      </div>
+      <div class="auth-error" id="authError"></div>
+      <div id="authFormLogin">
+        <div class="auth-field">
+          <label>E-mail</label>
+          <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label>Senha</label>
+          <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button class="auth-btn" id="btnLogin">Entrar</button>
+      </div>
+      <div id="authFormRegister" style="display:none;">
+        <div class="auth-field">
+          <label>Nome de usuário</label>
+          <input type="text" id="regUsername" placeholder="seu_usuario" autocomplete="username" maxlength="24">
+        </div>
+        <div class="auth-field">
+          <label>E-mail</label>
+          <input type="email" id="regEmail" placeholder="seu@email.com" autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label>Senha (mín. 6 caracteres)</label>
+          <input type="password" id="regPassword" placeholder="••••••••" autocomplete="new-password">
+        </div>
+        <button class="auth-btn" id="btnRegister">Criar conta</button>
+      </div>
+      <div class="auth-divider">ou</div>
+      <button class="auth-google" id="btnGoogle">
+        <svg viewBox="0 0 24 24"><path fill="#EA4335" d="M12 10.2v3.6h5.1c-.2 1.2-1.5 3.5-5.1 3.5-3.1 0-5.6-2.5-5.6-5.6S8.9 6.1 12 6.1c1.8 0 3 .7 3.7 1.4l2.5-2.5C16.7 3.6 14.5 2.7 12 2.7 6.9 2.7 2.7 6.9 2.7 12S6.9 21.3 12 21.3c5.5 0 9.1-3.9 9.1-9.3 0-.6-.1-1.1-.2-1.6H12z"/><path fill="#4285F4" d="M12 10.2v3.6h5.1c-.2 1.2-1.5 3.5-5.1 3.5-3.1 0-5.6-2.5-5.6-5.6"/><path fill="#FBBC05" d="M6.9 14.3l-2.8 2.2C5.6 19 8.6 21.3 12 21.3c2.4 0 4.5-.8 6-2.2l-2.9-2.3c-.8.5-1.8.9-3.1.9-2.4 0-4.4-1.6-5.1-3.8z"/><path fill="#34A853" d="M12 6.1c1.3 0 2.5.5 3.4 1.3l2.5-2.5C16.5 3.5 14.4 2.7 12 2.7 8.6 2.7 5.6 4.9 4.1 8l2.8 2.2C7.6 7.7 9.6 6.1 12 6.1z"/></svg>
+        Continuar com Google
+      </button>
+      <div class="auth-hint" id="authHint">Novo por aqui? <button type="button" id="switchToRegister">Criar uma conta</button></div>
+    </div>
+  </div>
   <div class="grain"></div>
 
   <div class="statusbar">
@@ -437,6 +561,7 @@
       </div>
     </div>
     <div class="profile-bio"><b>voce</b>capturando frequencias boas ✨ modo holograma ativado</div>
+    <button class="profile-edit-btn" id="logoutBtn">Sair da conta</button>
     <div class="profile-tabs">
       <div class="profile-tab active" data-tab="posts">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -570,8 +695,8 @@
   // ============================================================
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-  import { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-  import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove, setDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+  import { getAuth, onAuthStateChanged, updateProfile, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+  import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, limit, serverTimestamp, arrayUnion, arrayRemove, setDoc, getDoc, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
   // ★★★ SUBSTITUA PELAS SUAS CHAVES DO FIREBASE ★★★
   const firebaseConfig = {
@@ -659,45 +784,180 @@
     {avatar:'nightowl.rec', text:'comentou: "muito bom!"', time:'1h'}
   ];
 
-  // ---------- Auth ----------
-  function generateUsername(){
-    const adj = ['neon','cyber','vibe','astro','pixel','lunar','solar','nova'];
-    const noun = ['fox','wave','core','pulse','byte','spark','glow','flow'];
-    return adj[Math.floor(Math.random()*adj.length)] + '_' + noun[Math.floor(Math.random()*noun.length)] + Math.floor(Math.random()*90+10);
+  // ---------- Auth (login / cadastro / Google) ----------
+  const googleProvider = new GoogleAuthProvider();
+
+  function showAuthError(msg){
+    const el = document.getElementById('authError');
+    el.textContent = msg || '';
+    el.classList.toggle('show', !!msg);
+  }
+  function setAuthLoading(on){
+    document.getElementById('authLoading').classList.toggle('show', on);
+  }
+  function showAuthScreen(show){
+    document.getElementById('authScreen').classList.toggle('hidden', !show);
+  }
+  function switchAuthTab(mode){
+    const isLogin = mode === 'login';
+    document.getElementById('tabLogin').classList.toggle('active', isLogin);
+    document.getElementById('tabRegister').classList.toggle('active', !isLogin);
+    document.getElementById('authFormLogin').style.display = isLogin ? 'block' : 'none';
+    document.getElementById('authFormRegister').style.display = isLogin ? 'none' : 'block';
+    document.getElementById('authHint').innerHTML = isLogin
+      ? 'Novo por aqui? <button type="button" id="switchToRegister">Criar uma conta</button>'
+      : 'Já tem conta? <button type="button" id="switchToLogin">Entrar</button>';
+    document.getElementById(isLogin ? 'switchToRegister' : 'switchToLogin')?.addEventListener('click', ()=> switchAuthTab(isLogin ? 'register' : 'login'));
+    showAuthError('');
   }
 
-  async function ensureAuth(){
+  function normalizeUsername(u){
+    return (u||'').toLowerCase().replace(/[^a-z0-9._]/g,'').slice(0,24);
+  }
+
+  async function isUsernameTaken(username){
+    const snap = await getDoc(doc(db,'usernames', username));
+    return snap.exists();
+  }
+
+  async function saveUserProfile(user, extra={}){
+    const username = extra.username || user.displayName || ('user_'+user.uid.slice(0,6));
+    const data = {
+      uid: user.uid,
+      username,
+      displayName: extra.displayName || username,
+      email: user.email || '',
+      photoURL: user.photoURL || '',
+      bio: extra.bio || '',
+      updatedAt: serverTimestamp()
+    };
+    if(extra.isNew) data.createdAt = serverTimestamp();
+    await setDoc(doc(db,'users', user.uid), data, {merge:true});
+    // reserva o username (garante unicidade)
+    await setDoc(doc(db,'usernames', username), { uid: user.uid }, {merge:true});
+    return data;
+  }
+
+  async function loadUserProfile(uid){
+    const snap = await getDoc(doc(db,'users', uid));
+    return snap.exists() ? snap.data() : null;
+  }
+
+  async function setCurrentFromUser(user){
+    let profile = await loadUserProfile(user.uid);
+    if(!profile){
+      // Google first login — cria perfil com nome do Google
+      const base = normalizeUsername(user.displayName || user.email?.split('@')[0] || 'vibe') || 'vibe';
+      let username = base;
+      let n = 0;
+      while(await isUsernameTaken(username)){ n++; username = base + n; }
+      try{ await updateProfile(user, {displayName: username}); }catch(e){}
+      profile = await saveUserProfile(user, {username, displayName: user.displayName || username, isNew:true});
+    }
+    currentUser = {
+      uid: user.uid,
+      displayName: profile.username || profile.displayName || user.displayName || 'user',
+      username: profile.username || profile.displayName,
+      email: profile.email || user.email || '',
+      bio: profile.bio || '',
+      photoURL: profile.photoURL || user.photoURL || ''
+    };
+    updateProfileUI();
+    showAuthScreen(false);
+    startFeedListener();
+    renderAll();
+  }
+
+  function ensureAuth(){
     return new Promise((resolve)=>{
+      let resolved = false;
       onAuthStateChanged(auth, async (user)=>{
-        if(user){
-          if(!user.displayName){
-            const name = generateUsername();
-            try{ await updateProfile(user, {displayName: name}); }catch(e){}
-            currentUser = {uid: user.uid, displayName: name};
-          } else {
-            currentUser = {uid: user.uid, displayName: user.displayName};
-          }
-          // salva perfil no Firestore
+        if(user && !user.isAnonymous){
           try{
-            await setDoc(doc(db,'users',user.uid), {
-              displayName: currentUser.displayName,
-              createdAt: serverTimestamp()
-            }, {merge:true});
-          }catch(e){}
-          updateProfileUI();
-          resolve(currentUser);
+            await setCurrentFromUser(user);
+          }catch(e){
+            console.error(e);
+            showAuthError('Erro ao carregar perfil.');
+          }
+          if(!resolved){ resolved = true; resolve(currentUser); }
         } else {
-          try{
-            await signInAnonymously(auth);
-            // onAuthStateChanged vai disparar de novo
-          }catch(err){
-            console.error(err);
-            showToast('Erro de autenticacao. Verifique as chaves Firebase.');
-            resolve(null);
-          }
+          currentUser = null;
+          showAuthScreen(true);
+          if(!resolved){ resolved = true; resolve(null); }
         }
       });
     });
+  }
+
+  async function doLogin(){
+    const email = document.getElementById('loginEmail').value.trim();
+    const pass = document.getElementById('loginPassword').value;
+    if(!email || !pass){ showAuthError('Preencha e-mail e senha.'); return; }
+    setAuthLoading(true); showAuthError('');
+    try{
+      await signInWithEmailAndPassword(auth, email, pass);
+      // onAuthStateChanged cuida do resto
+    }catch(err){
+      const map = {
+        'auth/invalid-email': 'E-mail inválido.',
+        'auth/user-not-found': 'Conta não encontrada.',
+        'auth/wrong-password': 'Senha incorreta.',
+        'auth/invalid-credential': 'E-mail ou senha incorretos.',
+        'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco.'
+      };
+      showAuthError(map[err.code] || 'Não foi possível entrar. Tente de novo.');
+    } finally { setAuthLoading(false); }
+  }
+
+  async function doRegister(){
+    let username = normalizeUsername(document.getElementById('regUsername').value);
+    const email = document.getElementById('regEmail').value.trim();
+    const pass = document.getElementById('regPassword').value;
+    if(!username || username.length < 3){ showAuthError('Nome de usuário: mínimo 3 caracteres (a-z, 0-9, . _).'); return; }
+    if(!email || !pass){ showAuthError('Preencha todos os campos.'); return; }
+    if(pass.length < 6){ showAuthError('Senha precisa ter pelo menos 6 caracteres.'); return; }
+    setAuthLoading(true); showAuthError('');
+    try{
+      if(await isUsernameTaken(username)){
+        showAuthError('Esse nome de usuário já está em uso.');
+        setAuthLoading(false);
+        return;
+      }
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      await updateProfile(cred.user, {displayName: username});
+      await saveUserProfile(cred.user, {username, displayName: username, isNew:true});
+      // onAuthStateChanged
+    }catch(err){
+      const map = {
+        'auth/email-already-in-use': 'Este e-mail já está cadastrado. Tente entrar.',
+        'auth/invalid-email': 'E-mail inválido.',
+        'auth/weak-password': 'Senha muito fraca (mín. 6 caracteres).'
+      };
+      showAuthError(map[err.code] || 'Não foi possível criar a conta.');
+    } finally { setAuthLoading(false); }
+  }
+
+  async function doGoogle(){
+    setAuthLoading(true); showAuthError('');
+    try{
+      await signInWithPopup(auth, googleProvider);
+    }catch(err){
+      if(err.code !== 'auth/popup-closed-by-user'){
+        showAuthError('Login Google falhou. Ative o provedor Google no Firebase.');
+      }
+    } finally { setAuthLoading(false); }
+  }
+
+  async function doLogout(){
+    if(!confirm('Sair da sua conta?')) return;
+    try{
+      if(unsubFeed){ unsubFeed(); unsubFeed = null; }
+      await signOut(auth);
+      posts = [];
+      currentUser = null;
+      showAuthScreen(true);
+      switchAuthTab('login');
+    }catch(e){ showToast('Erro ao sair'); }
   }
 
   function updateProfileUI(){
@@ -705,7 +965,22 @@
     const init = initials(currentUser.displayName);
     document.getElementById('profileInitial').textContent = init;
     document.getElementById('profileDotBtn').textContent = init;
+    const bioEl = document.querySelector('.profile-bio');
+    if(bioEl){
+      bioEl.innerHTML = `<b>@${currentUser.username || currentUser.displayName}</b>${currentUser.bio || 'Bem-vindo ao VIBE ✨'}`;
+    }
   }
+
+  // bind auth UI
+  document.getElementById('tabLogin').onclick = ()=> switchAuthTab('login');
+  document.getElementById('tabRegister').onclick = ()=> switchAuthTab('register');
+  document.getElementById('btnLogin').onclick = doLogin;
+  document.getElementById('btnRegister').onclick = doRegister;
+  document.getElementById('btnGoogle').onclick = doGoogle;
+  document.getElementById('loginPassword').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  document.getElementById('regPassword').addEventListener('keydown', e=>{ if(e.key==='Enter') doRegister(); });
+  document.getElementById('switchToRegister')?.addEventListener('click', ()=> switchAuthTab('register'));
+
 
   // ---------- Feed em tempo real ----------
   function startFeedListener(){
@@ -1426,18 +1701,16 @@
   }
 
   // ---------- Init ----------
+  document.getElementById('logoutBtn')?.addEventListener('click', doLogout);
+
   (async function init(){
     try{
       const saved = JSON.parse(localStorage.getItem('vibe-saved')||'[]');
       mySavedIds = new Set(saved);
     }catch(e){}
+    switchAuthTab('login');
     await ensureAuth();
-    if(currentUser){
-      startFeedListener();
-      renderAll();
-    } else {
-      document.getElementById('feedList').innerHTML = `<div class="empty-state">Configure as chaves do Firebase no código<br>para ativar o modo multi-usuario</div>`;
-    }
+    // se logado, setCurrentFromUser já iniciou o feed
   })();
 </script>
 </body>
