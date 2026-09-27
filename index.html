@@ -71,6 +71,8 @@
   .statusbar .dot-icons{ display:flex; gap:5px; align-items:center; }
 
   .topbar{ display:flex; align-items:center; justify-content:space-between; padding:8px 18px 12px; flex-shrink:0; gap:8px; }
+  .logo{ cursor:pointer; }
+  .logo:active{ opacity:0.75; }
   .logo{
     font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:23px; letter-spacing:0.5px;
     background:linear-gradient(100deg, var(--cyan), var(--violet), var(--magenta), var(--lime), var(--cyan));
@@ -527,7 +529,7 @@
   </div>
 
   <div class="topbar">
-    <div class="logo">VIBE</div>
+    <div class="logo" id="logoRefresh" style="cursor:pointer;" title="Atualizar feed">VIBE</div>
     <div class="topbar-right">
       <button class="install-btn" id="installBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
@@ -573,7 +575,9 @@
         <div><div class="num" id="followingCount">0</div><div class="lbl">seguindo</div></div>
       </div>
     </div>
+    <button type="button" id="profileBackBtn" style="display:none;background:none;border:none;color:var(--cyan);font-size:13px;font-weight:600;padding:0 20px 8px;cursor:pointer;font-family:Space Grotesk;">← Voltar</button>
     <div class="profile-bio" id="profileBio"><b id="profileNameLabel">@voce</b><span id="profileBioText">Bem-vindo ao VIBE ✨</span></div>
+    <button class="follow-btn" id="profileFollowBtn" style="display:none;">Seguir</button>
     <button class="profile-edit-btn" id="editProfileBtn" style="margin-bottom:8px;">Editar perfil</button>
     <button class="profile-edit-btn" id="logoutBtn" style="opacity:0.7;font-size:12px;padding:8px;">Sair da conta</button>
     <div class="profile-tabs">
@@ -822,6 +826,8 @@
   let followingCount = 0;
   let viewingUserId = null;  // perfil de outro usuário (null = próprio)
   let pendingProfilePhoto = null; // dataURL ao editar foto
+  let seenStoryIds = new Set(); // stories já vistos por este usuário
+  let viewingProfile = null; // {uid, username, bio, photoURL, ...} ou null = próprio
 
 
   // ---------- Auth (login / cadastro / Google) ----------
@@ -908,6 +914,7 @@
     startStoriesListener();
     startNotifsListener();
     await loadFollowStats();
+    await loadSeenStories();
     renderAll();
   }
 
@@ -1396,6 +1403,32 @@
   function resolveSrc(p){ return p.mediaUrl || p.img || ''; }
   function resolveThumb(p){ return p.thumbUrl || p.mediaUrl || p.img || ''; }
 
+  async function loadSeenStories(){
+    if(!currentUser) return;
+    try{
+      const snap = await getDocs(collection(db,'users', currentUser.uid, 'seenStories'));
+      seenStoryIds = new Set(snap.docs.map(d=>d.id));
+    }catch(e){
+      try{
+        const local = JSON.parse(localStorage.getItem('vibe-seen-stories')||'[]');
+        seenStoryIds = new Set(local);
+      }catch(e2){ seenStoryIds = new Set(); }
+    }
+  }
+
+  async function markStorySeen(storyId){
+    if(!currentUser || !storyId || seenStoryIds.has(storyId)) return;
+    seenStoryIds.add(storyId);
+    try{
+      await setDoc(doc(db,'users', currentUser.uid, 'seenStories', storyId), {
+        at: serverTimestamp()
+      });
+    }catch(e){}
+    try{
+      localStorage.setItem('vibe-seen-stories', JSON.stringify([...seenStoryIds].slice(-200)));
+    }catch(e){}
+  }
+
   function renderStories(){
     const row = document.getElementById('storiesRow');
     row.innerHTML = '';
@@ -1409,13 +1442,14 @@
     you.innerHTML = `<div class="ring-spin you-add"><div class="avatar" style="${myBg}">${myPhoto}<div class="plus-badge">+</div></div></div><span>Seu story</span>`;
     you.onclick = ()=> document.getElementById('storyFileInput').click();
     row.appendChild(you);
-    // Agrupa por usuário (1 story por user na barra; ao abrir mostra o mais recente)
+    // Agrupa por usuário — só mostra se houver story ainda NÃO visto
     const byUser = {};
     liveStories.forEach(s=>{
+      if(seenStoryIds.has(s.id)) return; // visualização única: já visto some da barra
       if(!byUser[s.userId] || s.createdAt > byUser[s.userId].createdAt) byUser[s.userId] = s;
     });
     Object.values(byUser).forEach(s=>{
-      if(currentUser && s.userId === currentUser.uid) return; // já tem o "seu"
+      if(currentUser && s.userId === currentUser.uid) return;
       const el = document.createElement('div');
       el.className = 'story';
       el.innerHTML = `<div class="ring-spin"><div class="avatar" style="background:${gradFor(s.user)};">${initials(s.user)}</div></div><span>${(s.user||'').split(/[._]/)[0].slice(0,8)}</span>`;
@@ -1461,17 +1495,18 @@
 
     // eventos
     const unameEl = el.querySelector('.uname');
-    if(unameEl && !isMine){
+    if(unameEl){
       unameEl.onclick = async (e)=>{
         e.stopPropagation();
         const uid = unameEl.dataset.uid;
-        const un = unameEl.dataset.uname;
         if(!uid) return;
-        const following = followingIds.has(uid);
-        if(confirm(following ? `Deixar de seguir @${un}?` : `Seguir @${un}?`)){
-          await toggleFollow(uid, un);
-          renderFeed();
+        if(currentUser && uid === currentUser.uid){
+          viewingProfile = null;
+          switchView('profile');
+          renderProfile();
+          return;
         }
+        await openUserProfile(uid);
       };
     }
     const heartBtn = el.querySelector('.heart-btn');
@@ -1584,20 +1619,104 @@
     document.getElementById('navActivityDot').classList.remove('show');
   }
 
+  async function openUserProfile(uid){
+    try{
+      const snap = await getDoc(doc(db,'users', uid));
+      if(!snap.exists()){ showToast('Usuário não encontrado'); return; }
+      const data = snap.data();
+      viewingProfile = {
+        uid,
+        username: data.username || data.displayName || 'user',
+        displayName: data.displayName || data.username || 'user',
+        bio: data.bio || '',
+        photoURL: data.photoURL || ''
+      };
+      // contadores do outro usuário
+      try{
+        const fol = await getDocs(collection(db,'users', uid, 'followers'));
+        const fing = await getDocs(collection(db,'users', uid, 'following'));
+        viewingProfile._followers = fol.size;
+        viewingProfile._following = fing.size;
+      }catch(e){
+        viewingProfile._followers = 0;
+        viewingProfile._following = 0;
+      }
+      profileTab = 'posts';
+      document.querySelectorAll('.profile-tab').forEach(t=>{
+        t.classList.toggle('active', t.dataset.tab==='posts');
+      });
+      switchView('profile');
+      await renderProfile();
+    }catch(e){
+      console.error(e);
+      showToast('Erro ao abrir perfil');
+    }
+  }
+
   async function renderProfile(){
     if(!currentUser) return;
-    const mine = posts.filter(p=>p.userId === currentUser.uid);
-    const saved = posts.filter(p=>mySavedIds.has(p.id));
-    document.getElementById('myPostCount').textContent = mine.length;
-    document.getElementById('followersCount').textContent = followersCount;
-    document.getElementById('followingCount').textContent = followingCount;
-    updateProfileUI();
+    const isOther = !!viewingProfile;
+    const targetUid = isOther ? viewingProfile.uid : currentUser.uid;
+    const targetName = isOther ? viewingProfile.username : (currentUser.username || currentUser.displayName);
+    const targetBio = isOther ? (viewingProfile.bio || '') : (currentUser.bio || 'Bem-vindo ao VIBE ✨');
+    const targetPhoto = isOther ? viewingProfile.photoURL : currentUser.photoURL;
+
+    document.getElementById('profileBackBtn').style.display = isOther ? 'block' : 'none';
+    document.getElementById('editProfileBtn').style.display = isOther ? 'none' : 'block';
+    document.getElementById('logoutBtn').style.display = isOther ? 'none' : 'block';
+    const followBtn = document.getElementById('profileFollowBtn');
+    if(isOther){
+      followBtn.style.display = 'block';
+      const isF = followingIds.has(targetUid);
+      followBtn.textContent = isF ? 'Seguindo' : 'Seguir';
+      followBtn.classList.toggle('following', isF);
+      followBtn.onclick = async ()=>{
+        await toggleFollow(targetUid, targetName);
+        const nowF = followingIds.has(targetUid);
+        followBtn.textContent = nowF ? 'Seguindo' : 'Seguir';
+        followBtn.classList.toggle('following', nowF);
+      };
+    } else {
+      followBtn.style.display = 'none';
+    }
+
+    // avatar + bio
+    const avatarWrap = document.getElementById('profileAvatarWrap');
+    const init = initials(targetName);
+    if(targetPhoto){
+      avatarWrap.innerHTML = `<img src="${targetPhoto}" alt="" style="width:70px;height:70px;border-radius:50%;object-fit:cover;">`;
+    } else {
+      avatarWrap.innerHTML = `<span id="profileInitial">${init}</span>`;
+    }
+    document.getElementById('profileNameLabel').textContent = '@' + targetName;
+    document.getElementById('profileBioText').textContent = targetBio || 'Bem-vindo ao VIBE ✨';
+
+    const userPosts = posts.filter(p=>p.userId === targetUid);
+    document.getElementById('myPostCount').textContent = userPosts.length;
+    if(isOther){
+      document.getElementById('followersCount').textContent = viewingProfile._followers || 0;
+      document.getElementById('followingCount').textContent = viewingProfile._following || 0;
+    } else {
+      document.getElementById('followersCount').textContent = followersCount;
+      document.getElementById('followingCount').textContent = followingCount;
+    }
+
     const wrap = document.getElementById('myGridWrap');
-    const list = profileTab === 'posts' ? mine : saved;
+    const list = (!isOther && profileTab === 'saved')
+      ? posts.filter(p=>mySavedIds.has(p.id))
+      : userPosts;
+    // esconde aba salvos em perfil alheio
+    document.querySelectorAll('.profile-tab').forEach(t=>{
+      if(t.dataset.tab==='saved') t.style.display = isOther ? 'none' : '';
+    });
+
     if(list.length===0){
-      const msg = profileTab === 'posts' ? 'Nenhuma publicacao ainda' : 'Nenhum post salvo ainda';
-      wrap.innerHTML = `<div class="empty-state">${msg}${profileTab==='posts' ? '<br><button id="emptyCamBtn">Compartilhar seu primeiro momento</button>' : ''}</div>`;
-      if(profileTab==='posts') document.getElementById('emptyCamBtn').onclick = openCamera;
+      const msg = profileTab === 'saved' ? 'Nenhum post salvo ainda' : 'Nenhuma publicacao ainda';
+      wrap.innerHTML = `<div class="empty-state">${msg}${(!isOther && profileTab==='posts') ? '<br><button id="emptyCamBtn">Compartilhar seu primeiro momento</button>' : ''}</div>`;
+      if(!isOther && profileTab==='posts'){
+        const b = document.getElementById('emptyCamBtn');
+        if(b) b.onclick = openCamera;
+      }
     } else {
       wrap.innerHTML = '<div class="grid3"></div>';
       const grid = wrap.querySelector('.grid3');
@@ -1612,14 +1731,38 @@
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById('view-'+name).classList.add('active');
     document.querySelectorAll('.nav-btn[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
+    if(name==='profile' && !viewingProfile){
+      // perfil próprio via navbar
+    }
     if(name==='search') renderSearch(document.getElementById('searchInput').value);
     if(name==='profile') renderProfile();
     if(name==='activity') renderActivity();
+    if(name==='feed'){
+      const feed = document.getElementById('view-feed');
+      if(feed) feed.scrollTop = 0;
+    }
   }
-  document.querySelectorAll('.nav-btn[data-view]').forEach(b=> b.onclick = ()=> switchView(b.dataset.view));
+  document.querySelectorAll('.nav-btn[data-view]').forEach(b=> b.onclick = ()=>{
+    if(b.dataset.view === 'profile') viewingProfile = null;
+    switchView(b.dataset.view);
+  });
   document.getElementById('navCamera').onclick = openCamera;
   document.getElementById('topActivityBtn').onclick = ()=> switchView('activity');
   document.getElementById('topSearchBtn').onclick = ()=> switchView('search');
+
+  // Logo VIBE = atualizar feed em tempo real
+  document.getElementById('logoRefresh')?.addEventListener('click', ()=>{
+    switchView('feed');
+    renderAll();
+    const feed = document.getElementById('view-feed');
+    if(feed) feed.scrollTop = 0;
+    showToast('Feed atualizado');
+  });
+
+  document.getElementById('profileBackBtn')?.addEventListener('click', ()=>{
+    viewingProfile = null;
+    switchView('feed');
+  });
 
   document.querySelectorAll('.profile-tab').forEach(tab=>{
     tab.onclick = ()=>{
@@ -1744,18 +1887,31 @@
     document.getElementById('storyAvatar').style.background = gradFor(s.user);
     document.getElementById('storyAvatar').textContent = initials(s.user);
     document.getElementById('storyUname').textContent = s.user;
-    document.getElementById('storyImg').src = s.img;
     const prog = document.getElementById('storyProgress');
-    // todos os stories deste usuário nas últimas 24h
-    const userStories = liveStories.filter(x=>x.userId===s.userId).sort((a,b)=>a.createdAt-b.createdAt);
-    const list = userStories.length ? userStories : [s];
+    // só stories deste usuário que AINDA não foram vistos (visualização única)
+    const userStories = liveStories
+      .filter(x=>x.userId===s.userId && !seenStoryIds.has(x.id))
+      .sort((a,b)=>a.createdAt-b.createdAt);
+    const list = userStories.length ? userStories : (seenStoryIds.has(s.id) ? [] : [s]);
+    if(!list.length){
+      showToast('Story já visualizado');
+      renderStories();
+      return;
+    }
     let idx = Math.max(0, list.findIndex(x=>x.id===s.id));
-    if(idx < 0) idx = list.length-1;
+    if(idx < 0) idx = 0;
     prog.innerHTML = list.map(()=> '<div class="bar"><i></i></div>').join('');
     const bars = prog.querySelectorAll('.bar');
-    bars.forEach((b,i)=>{ if(i<idx) b.classList.add('done'); });
-    if(bars[idx]) bars[idx].classList.add('playing');
-    document.getElementById('storyImg').src = list[idx].img;
+    const showAt = (i)=>{
+      document.getElementById('storyImg').src = list[i].img;
+      markStorySeen(list[i].id);
+      bars.forEach((b,bi)=>{
+        b.classList.remove('playing','done');
+        if(bi < i) b.classList.add('done');
+        if(bi === i) b.classList.add('playing');
+      });
+    };
+    showAt(idx);
     document.getElementById('storyView').classList.add('active');
     clearTimeout(storyTimer);
     const advance = ()=>{
@@ -1763,8 +1919,7 @@
       bars[idx]?.classList.add('done');
       idx++;
       if(idx >= list.length){ closeStory(); return; }
-      document.getElementById('storyImg').src = list[idx].img;
-      bars[idx]?.classList.add('playing');
+      showAt(idx);
       storyTimer = setTimeout(advance, 4000);
     };
     storyTimer = setTimeout(advance, 4000);
@@ -1772,6 +1927,7 @@
   function closeStory(){
     document.getElementById('storyView').classList.remove('active');
     clearTimeout(storyTimer);
+    renderStories(); // some da barra os já vistos
   }
   document.getElementById('closeStoryBtn').onclick = closeStory;
   document.getElementById('storyView').addEventListener('click', (e)=>{ if(e.target.id==='storyView') closeStory(); });

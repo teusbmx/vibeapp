@@ -1,12 +1,11 @@
-# VIBE — login + stories + perfil + seguidores + notificações
+# VIBE — regras Firestore atualizadas
 
-## Novidades
-- Stories reais (24h) — toque em “Seu story” e escolha uma foto
-- Editar perfil: foto, @usuário e bio
-- Seguidores / seguindo reais
-- Notificações reais (curtida, comentário, novo seguidor)
+## Novidades desta versão
+- Stories com **visualização única** (cada story só aparece 1 vez por usuário)
+- Clique no logo **VIBE** atualiza o feed
+- Clique no **nome do usuário** no post abre o perfil dele
 
-## Regras Firestore (cole e publique)
+## Regras (cole e publique)
 
 ```
 rules_version = '2';
@@ -29,6 +28,9 @@ service cloud.firestore {
         allow read: if true;
         allow write: if request.auth != null;
       }
+      match /seenStories/{storyId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
     match /usernames/{name} {
       allow read: if true;
@@ -50,10 +52,3 @@ service cloud.firestore {
   }
 }
 ```
-
-## Como usar
-1. Publique as regras acima
-2. Suba o ZIP no Vercel (substitua os arquivos)
-3. Stories: toque no círculo “Seu story”
-4. Perfil: botão “Editar perfil”
-5. Notificações aparecem na aba de atividade (coração)
