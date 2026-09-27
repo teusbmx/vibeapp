@@ -1981,16 +1981,14 @@
   }
   document.getElementById('viewerCloseBtn').onclick = ()=> document.getElementById('viewerBackdrop').classList.remove('active');
 
-  // ---------- Stories ----------
-  let storyTimer = null;
-  // ---- Story viewer (sequência + pause + visualização única) ----
-  let storyTimer = null;
-  let storyPaused = false;
-  let storyRemainingMs = 4000;
-  let storySegmentStarted = 0;
-  let storyList = [];
-  let storyIdx = 0;
-  let storyBars = null;
+  // ---------- Stories (sequência + pause + visualização única) ----------
+  var storyTimer = null;
+  var storyRemainingMs = 4000;
+  var storySegmentStarted = 0;
+  var storyList = [];
+  var storyIdx = 0;
+  var storyBars = null;
+  // storyPaused já declarado no estado global
 
   function clearStoryTimer(){
     if(storyTimer){ clearTimeout(storyTimer); storyTimer = null; }
