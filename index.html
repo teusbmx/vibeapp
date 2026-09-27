@@ -1006,9 +1006,15 @@
     if(!confirm('Sair da sua conta?')) return;
     try{
       if(unsubFeed){ unsubFeed(); unsubFeed = null; }
+      if(unsubStories){ unsubStories(); unsubStories = null; }
+      if(unsubNotifs){ unsubNotifs(); unsubNotifs = null; }
       await signOut(auth);
       posts = [];
+      liveStories = [];
+      notifications = [];
+      followingIds = new Set();
       currentUser = null;
+      viewingProfile = null;
       showAuthScreen(true);
       switchAuthTab('login');
     }catch(e){ showToast('Erro ao sair'); }
@@ -1018,10 +1024,12 @@
     if(!currentUser) return;
     const init = initials(currentUser.displayName);
     const avatarWrap = document.getElementById('profileAvatarWrap');
-    if(currentUser.photoURL){
-      avatarWrap.innerHTML = `<img src="${currentUser.photoURL}" alt="" style="width:70px;height:70px;border-radius:50%;object-fit:cover;">`;
-    } else {
-      avatarWrap.innerHTML = `<span id="profileInitial">${init}</span>`;
+    if(avatarWrap){
+      if(currentUser.photoURL){
+        avatarWrap.innerHTML = `<img src="${currentUser.photoURL}" alt="" style="width:70px;height:70px;border-radius:50%;object-fit:cover;">`;
+      } else {
+        avatarWrap.innerHTML = `<span id="profileInitial">${init}</span>`;
+      }
     }
     // mini foto na navbar inferior
     const dot = document.getElementById('profileDotBtn');
