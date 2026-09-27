@@ -483,7 +483,7 @@
   .dm-item .time{ font-size:11px; color:var(--muted); font-weight:500; }
   .dm-unread{ width:8px;height:8px;border-radius:50%; background:var(--magenta); flex-shrink:0; box-shadow:0 0 6px var(--magenta); }
   .chat-view{
-    position:absolute; inset:0; background:#07070C; display:none; flex-direction:column; z-index:45;
+    position:absolute; inset:0; background:#07070C; display:none; flex-direction:column; z-index:90;
     padding-top:env(safe-area-inset-top,0px);
   }
   .chat-view.active{ display:flex; }
@@ -1353,20 +1353,34 @@
   }
 
   async function openChat(peerUid, peerName, peerPhoto){
-    if(!currentUser || !peerUid) return;
-    activeChatPeer = { uid: peerUid, username: peerName, photoURL: peerPhoto || '' };
+    if(!currentUser){ showToast('Faça login primeiro'); return; }
+    if(!peerUid){ showToast('Usuário inválido'); return; }
+
+    activeChatPeer = { uid: peerUid, username: peerName || 'usuário', photoURL: peerPhoto || '' };
     const cid = conversationId(currentUser.uid, peerUid);
     activeChatId = cid;
 
-    // garante documento da conversa
-    const cref = doc(db,'conversations', cid);
-    const existing = await getDoc(cref);
-    if(!existing.exists()){
+    // Abre a tela IMEDIATAMENTE (não espera o Firestore)
+    const av = document.getElementById('chatAvatar');
+    if(peerPhoto){
+      av.style.background = 'transparent';
+      av.innerHTML = `<img src="${peerPhoto}" alt="">`;
+    } else {
+      av.style.background = gradFor(peerName || 'u');
+      av.textContent = initials(peerName || '?');
+    }
+    document.getElementById('chatTitle').textContent = peerName || 'Chat';
+    document.getElementById('chatMsgs').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px;">Carregando...</div>';
+    document.getElementById('chatView').classList.add('active');
+
+    // cria conversa se não existir
+    try{
+      const cref = doc(db,'conversations', cid);
       await setDoc(cref, {
         participants: [currentUser.uid, peerUid],
         participantNames: {
-          [currentUser.uid]: currentUser.displayName,
-          [peerUid]: peerName
+          [currentUser.uid]: currentUser.displayName || 'eu',
+          [peerUid]: peerName || 'usuário'
         },
         participantPhotos: {
           [currentUser.uid]: currentUser.photoURL || '',
@@ -1375,27 +1389,22 @@
         lastMessage: '',
         updatedAt: serverTimestamp(),
         unread: { [currentUser.uid]: 0, [peerUid]: 0 }
-      });
+      }, { merge: true });
+    }catch(e){
+      console.error('create convo', e);
+      showToast('Erro ao abrir conversa. Publique as regras de conversations no Firestore.');
+      document.getElementById('chatMsgs').innerHTML = '<div style="text-align:center;color:var(--danger);padding:20px;font-size:13px;">Não foi possível criar a conversa.<br>Verifique as regras do Firestore.</div>';
+      return;
     }
-
-    // header
-    const av = document.getElementById('chatAvatar');
-    if(peerPhoto){
-      av.style.background = 'transparent';
-      av.innerHTML = `<img src="${peerPhoto}" alt="">`;
-    } else {
-      av.style.background = gradFor(peerName);
-      av.textContent = initials(peerName);
-    }
-    document.getElementById('chatTitle').textContent = peerName;
-    document.getElementById('chatView').classList.add('active');
-    document.getElementById('chatMsgs').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px;">Carregando...</div>';
 
     if(unsubMessages) unsubMessages();
     const mq = query(collection(db,'conversations', cid, 'messages'), orderBy('createdAt','asc'), limit(100));
     unsubMessages = onSnapshot(mq, async (snap)=>{
       const box = document.getElementById('chatMsgs');
       box.innerHTML = '';
+      if(snap.empty){
+        box.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:30px 16px;">Diga oi 👋</div>';
+      }
       snap.docs.forEach(d=>{
         const m = d.data();
         const mine = m.fromUserId === currentUser.uid;
@@ -1405,7 +1414,6 @@
         box.appendChild(el);
       });
       box.scrollTop = box.scrollHeight;
-      // marca como lido
       try{
         await updateDoc(doc(db,'conversations', cid), {
           [`unread.${currentUser.uid}`]: 0
@@ -1413,7 +1421,7 @@
       }catch(e){}
     }, err => {
       console.warn('messages', err);
-      document.getElementById('chatMsgs').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">Erro ao carregar mensagens</div>';
+      document.getElementById('chatMsgs').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">Erro ao carregar mensagens (regras/índice)</div>';
     });
   }
 
@@ -2147,7 +2155,14 @@
         followBtn.classList.toggle('following', nowF);
       };
       if(msgBtn){
-        msgBtn.onclick = ()=> openChat(targetUid, targetName, targetPhoto || '');
+        msgBtn.onclick = (e)=>{
+          e.preventDefault();
+          e.stopPropagation();
+          openChat(targetUid, targetName, targetPhoto || '').catch(err=>{
+            console.error(err);
+            showToast('Erro ao abrir chat');
+          });
+        };
       }
     } else {
       followBtn.style.display = 'none';

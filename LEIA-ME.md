@@ -53,8 +53,12 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == resource.data.toUserId;
     }
     match /conversations/{cid} {
-      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
-      allow create: if request.auth != null && request.auth.uid in request.resource.data.participants;
+      allow read: if request.auth != null &&
+        (resource == null || request.auth.uid in resource.data.participants);
+      allow create: if request.auth != null &&
+        request.auth.uid in request.resource.data.participants;
+      allow update: if request.auth != null &&
+        request.auth.uid in resource.data.participants;
       match /messages/{mid} {
         allow read, create: if request.auth != null &&
           request.auth.uid in get(/databases/$(database)/documents/conversations/$(cid)).data.participants;
