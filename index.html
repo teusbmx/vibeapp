@@ -1174,6 +1174,7 @@
         toUserId,
         fromUserId: currentUser.uid,
         fromUser: currentUser.displayName,
+        fromPhoto: currentUser.photoURL || '',
         type, // like | comment | follow
         text,
         postId: postId || null,
@@ -1218,6 +1219,7 @@
       comments: arrayUnion({
         user: currentUser.displayName,
         userId: currentUser.uid,
+        userPhoto: currentUser.photoURL || '',
         text: text.trim(),
         at: Date.now()
       })
@@ -1705,12 +1707,42 @@
         const row = document.createElement('div');
         row.className = 'activity-item';
         const thumb = a.thumb ? `<img class="thumb" src="${a.thumb}">` : '';
+        const photo = a.fromPhoto || '';
+        const avInner = photo
+          ? `<img src="${photo}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+          : initials(a.fromUser);
+        const avBg = photo ? 'transparent' : gradFor(a.fromUser);
         row.innerHTML = `
-          <div class="avatar" style="background:${gradFor(a.fromUser)};">${initials(a.fromUser)}</div>
-          <div class="txt"><span class="u">${a.fromUser||'alguém'}</span> ${a.text||''} <div class="time">${a.time||''}</div></div>
+          <div class="avatar" style="background:${avBg};cursor:pointer;" data-uid="${a.fromUserId||''}">${avInner}</div>
+          <div class="txt"><span class="u" style="cursor:pointer;color:var(--text);" data-uid="${a.fromUserId||''}">${a.fromUser||'alguém'}</span> ${a.text||''} <div class="time">${a.time||''}</div></div>
           ${thumb}
         `;
         list.appendChild(row);
+        if(!photo && a.fromUserId){
+          ensureUserPhoto(a.fromUserId).then(ph=>{
+            if(!ph) return;
+            a.fromPhoto = ph;
+            const av = row.querySelector('.avatar');
+            if(av){
+              av.style.background = 'transparent';
+              av.innerHTML = `<img src="${ph}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+            }
+          });
+        }
+        row.querySelectorAll('[data-uid]').forEach(el=>{
+          el.onclick = (e)=>{
+            e.stopPropagation();
+            const uid = el.dataset.uid;
+            if(!uid) return;
+            if(currentUser && uid === currentUser.uid){
+              viewingProfile = null;
+              switchView('profile');
+              renderProfile();
+            } else {
+              openUserProfile(uid);
+            }
+          };
+        });
       });
     }
     markNotifsRead();
@@ -1894,8 +1926,40 @@
     (p?.comments||[]).forEach(c=>{
       const row = document.createElement('div');
       row.className = 'comment-row';
-      row.innerHTML = `<div class="avatar" style="background:${gradFor(c.user)};">${initials(c.user)}</div><div class="txt"><b>${c.user}</b>${c.text}</div>`;
+      const photo = c.userPhoto || '';
+      const avInner = photo
+        ? `<img src="${photo}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+        : initials(c.user);
+      const avBg = photo ? 'transparent' : gradFor(c.user);
+      row.innerHTML = `<div class="avatar" style="background:${avBg};cursor:pointer;" data-uid="${c.userId||''}">${avInner}</div><div class="txt"><b style="cursor:pointer;" data-uid="${c.userId||''}">${c.user}</b> ${c.text}</div>`;
       list.appendChild(row);
+      // carrega foto se comentário antigo sem userPhoto
+      if(!photo && c.userId){
+        ensureUserPhoto(c.userId).then(ph=>{
+          if(!ph) return;
+          c.userPhoto = ph;
+          const av = row.querySelector('.avatar');
+          if(av){
+            av.style.background = 'transparent';
+            av.innerHTML = `<img src="${ph}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+          }
+        });
+      }
+      row.querySelectorAll('[data-uid]').forEach(el=>{
+        el.onclick = (e)=>{
+          e.stopPropagation();
+          const uid = el.dataset.uid;
+          if(!uid) return;
+          closeComments();
+          if(currentUser && uid === currentUser.uid){
+            viewingProfile = null;
+            switchView('profile');
+            renderProfile();
+          } else {
+            openUserProfile(uid);
+          }
+        };
+      });
     });
     document.getElementById('menuSheet').classList.remove('active');
     document.getElementById('sheetBackdrop').classList.add('active');
