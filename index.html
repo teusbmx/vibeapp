@@ -828,6 +828,9 @@
   let pendingProfilePhoto = null; // dataURL ao editar foto
   let seenStoryIds = new Set(); // stories já vistos por este usuário
   let viewingProfile = null; // {uid, username, bio, photoURL, ...} ou null = próprio
+  let userCache = {}; // uid -> {username, photoURL}
+  let storyPaused = false;
+  let pendingStoryBlob = null;
 
 
   // ---------- Auth (login / cadastro / Google) ----------
@@ -1051,6 +1054,7 @@
           loc: data.loc || '',
           mediaType: data.mediaType || 'image',
           mediaUrl: data.mediaUrl,
+          userPhoto: data.userPhoto || null,
           thumbUrl: data.thumbUrl || null,
           caption: data.caption || '',
           likes: data.likes || 0,
@@ -1135,6 +1139,7 @@
     await addDoc(collection(db,'posts'), {
       userId: currentUser.uid,
       user: currentUser.displayName,
+      userPhoto: currentUser.photoURL || '',
       loc: loc || 'Agora',
       mediaType: prepared.mediaType,
       mediaUrl: prepared.mediaUrl,
@@ -1269,6 +1274,7 @@
           userId: data.userId,
           user: data.user,
           img: data.mediaUrl,
+          userPhoto: data.userPhoto || '',
           createdAt: created
         };
       }).filter(s => s.createdAt > now - 24*60*60*1000);
@@ -1283,10 +1289,62 @@
     await addDoc(collection(db,'stories'), {
       userId: currentUser.uid,
       user: currentUser.displayName,
+      userPhoto: currentUser.photoURL || '',
       mediaUrl,
       createdAt: serverTimestamp()
     });
     showToast('Story publicado!');
+  }
+
+  function openStoryPreview(blob){
+    pendingStoryBlob = blob;
+    const url = URL.createObjectURL(blob);
+    const wrap = document.getElementById('previewMediaWrap');
+    wrap.innerHTML = `<img src="${url}" alt="story preview">`;
+    document.getElementById('captionInput').value = '';
+    document.getElementById('locInput').value = '';
+    // modo story: esconde legenda/local e muda textos
+    document.getElementById('captionInput').style.display = 'none';
+    document.getElementById('locInput').style.display = 'none';
+    document.getElementById('aiSuggestBtn').style.display = 'none';
+    const title = document.querySelector('#previewView .camera-topbar span');
+    if(title) title.textContent = 'Novo story';
+    document.getElementById('shareBtn').textContent = 'Publicar story';
+    document.getElementById('previewView').dataset.mode = 'story';
+    document.getElementById('previewView').classList.add('active');
+  }
+
+  function resetPreviewMode(){
+    document.getElementById('captionInput').style.display = '';
+    document.getElementById('locInput').style.display = '';
+    document.getElementById('aiSuggestBtn').style.display = '';
+    const title = document.querySelector('#previewView .camera-topbar span');
+    if(title) title.textContent = 'Nova publicacao';
+    document.getElementById('shareBtn').textContent = 'Compartilhar';
+    document.getElementById('previewView').dataset.mode = 'post';
+    pendingStoryBlob = null;
+  }
+
+  async function ensureUserPhoto(uid){
+    if(!uid) return null;
+    if(userCache[uid]?.photoURL !== undefined) return userCache[uid].photoURL;
+    try{
+      const snap = await getDoc(doc(db,'users', uid));
+      if(snap.exists()){
+        const d = snap.data();
+        userCache[uid] = { username: d.username || d.displayName, photoURL: d.photoURL || '' };
+        return userCache[uid].photoURL;
+      }
+    }catch(e){}
+    userCache[uid] = { photoURL: '' };
+    return '';
+  }
+
+  function avatarHtml(name, photoUrl){
+    if(photoUrl){
+      return `<img src="${photoUrl}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    }
+    return initials(name);
   }
 
   // ---------- Notifications listener ----------
@@ -1452,7 +1510,11 @@
       if(currentUser && s.userId === currentUser.uid) return;
       const el = document.createElement('div');
       el.className = 'story';
-      el.innerHTML = `<div class="ring-spin"><div class="avatar" style="background:${gradFor(s.user)};">${initials(s.user)}</div></div><span>${(s.user||'').split(/[._]/)[0].slice(0,8)}</span>`;
+      const av = s.userPhoto
+        ? `<img src="${s.userPhoto}" alt="">`
+        : initials(s.user);
+      const bg = s.userPhoto ? 'transparent' : gradFor(s.user);
+      el.innerHTML = `<div class="ring-spin"><div class="avatar" style="background:${bg};">${av}</div></div><span>${(s.user||'').split(/[._]/)[0].slice(0,8)}</span>`;
       el.onclick = ()=> openStory(s);
       row.appendChild(el);
     });
@@ -1465,7 +1527,7 @@
     const src = resolveSrc(p);
     el.innerHTML = `
       <div class="post-head">
-        <div class="avatar" style="background:${gradFor(p.user)};">${initials(p.user)}</div>
+        <div class="avatar" style="background:${p.userPhoto ? 'transparent' : gradFor(p.user)};" data-uid="${p.userId}">${p.userPhoto ? `<img src="${p.userPhoto}" alt="">` : initials(p.user)}</div>
         <div class="who"><div class="uname" data-uid="${p.userId}" data-uname="${p.user}" style="cursor:pointer;">${p.user}${isMine ? '<span class="you-tag">VOCE</span>' : ''}${(!isMine && followingIds.has(p.userId)) ? ' · <span style="color:var(--muted);font-size:11px;">seguindo</span>' : ''}</div><div class="loc">${p.loc||''}</div></div>
         <button class="icon-btn menu-btn" style="background:transparent;border:none;"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       </div>
@@ -1566,6 +1628,21 @@
       return;
     }
     posts.forEach(p => list.appendChild(postCard(p)));
+    // carrega fotos de perfil que faltam nos posts antigos
+    (async ()=>{
+      for(const p of posts){
+        if(p.userPhoto || !p.userId) continue;
+        const photo = await ensureUserPhoto(p.userId);
+        if(photo){
+          p.userPhoto = photo;
+          const av = list.querySelector(`.avatar[data-uid="${p.userId}"]`);
+          if(av){
+            av.style.background = 'transparent';
+            av.innerHTML = `<img src="${photo}" alt="">`;
+          }
+        }
+      }
+    })();
   }
 
   function normalize(str){ return (str||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
@@ -1883,12 +1960,22 @@
 
   // ---------- Stories ----------
   let storyTimer = null;
+  let storyResumeTimer = null;
+  let storyPauseStarted = 0;
+  let storyRemainingMs = 4000;
+  let storyAdvanceFn = null;
+
   function openStory(s){
+    storyPaused = false;
+    storyRemainingMs = 4000;
     document.getElementById('storyAvatar').style.background = gradFor(s.user);
     document.getElementById('storyAvatar').textContent = initials(s.user);
+    if(s.userPhoto){
+      document.getElementById('storyAvatar').innerHTML = `<img src="${s.userPhoto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+      document.getElementById('storyAvatar').style.background = 'transparent';
+    }
     document.getElementById('storyUname').textContent = s.user;
     const prog = document.getElementById('storyProgress');
-    // só stories deste usuário que AINDA não foram vistos (visualização única)
     const userStories = liveStories
       .filter(x=>x.userId===s.userId && !seenStoryIds.has(x.id))
       .sort((a,b)=>a.createdAt-b.createdAt);
@@ -1902,35 +1989,91 @@
     if(idx < 0) idx = 0;
     prog.innerHTML = list.map(()=> '<div class="bar"><i></i></div>').join('');
     const bars = prog.querySelectorAll('.bar');
+    // anima a barra com CSS variable
+    bars.forEach(b=>{
+      const i = b.querySelector('i');
+      if(i){ i.style.animation = 'none'; i.style.width = '0%'; }
+    });
+
     const showAt = (i)=>{
       document.getElementById('storyImg').src = list[i].img;
       markStorySeen(list[i].id);
       bars.forEach((b,bi)=>{
         b.classList.remove('playing','done');
+        const fill = b.querySelector('i');
+        if(fill){
+          fill.style.animation = 'none';
+          fill.style.width = bi < i ? '100%' : '0%';
+        }
         if(bi < i) b.classList.add('done');
         if(bi === i) b.classList.add('playing');
       });
+      const fill = bars[i]?.querySelector('i');
+      if(fill){
+        fill.style.width = '0%';
+        void fill.offsetWidth;
+        fill.style.transition = 'width 4s linear';
+        fill.style.width = '100%';
+      }
+      storyRemainingMs = 4000;
+      storyPaused = false;
     };
-    showAt(idx);
-    document.getElementById('storyView').classList.add('active');
-    clearTimeout(storyTimer);
+
     const advance = ()=>{
+      if(storyPaused) return;
       bars[idx]?.classList.remove('playing');
       bars[idx]?.classList.add('done');
+      const fill = bars[idx]?.querySelector('i');
+      if(fill){ fill.style.transition = 'none'; fill.style.width = '100%'; }
       idx++;
       if(idx >= list.length){ closeStory(); return; }
       showAt(idx);
+      clearTimeout(storyTimer);
       storyTimer = setTimeout(advance, 4000);
     };
+    storyAdvanceFn = advance;
+
+    showAt(idx);
+    document.getElementById('storyView').classList.add('active');
+    clearTimeout(storyTimer);
     storyTimer = setTimeout(advance, 4000);
+
+    // clique = pausar / continuar (mantém visualização única)
+    const storyView = document.getElementById('storyView');
+    storyView.onclick = (e)=>{
+      if(e.target.id === 'closeStoryBtn' || e.target.closest('#closeStoryBtn')) return;
+      if(e.target.closest('.story-head')) return;
+      const fill = bars[idx]?.querySelector('i');
+      if(!storyPaused){
+        storyPaused = true;
+        clearTimeout(storyTimer);
+        if(fill){
+          const computed = getComputedStyle(fill).width;
+          const parentW = fill.parentElement.offsetWidth || 1;
+          const pct = (parseFloat(computed) / parentW) * 100;
+          fill.style.transition = 'none';
+          fill.style.width = pct + '%';
+          storyRemainingMs = Math.max(300, 4000 * (1 - pct/100));
+        }
+      } else {
+        storyPaused = false;
+        if(fill){
+          fill.style.transition = `width ${storyRemainingMs}ms linear`;
+          fill.style.width = '100%';
+        }
+        clearTimeout(storyTimer);
+        storyTimer = setTimeout(advance, storyRemainingMs);
+      }
+    };
   }
   function closeStory(){
     document.getElementById('storyView').classList.remove('active');
     clearTimeout(storyTimer);
+    storyPaused = false;
+    storyAdvanceFn = null;
     renderStories(); // some da barra os já vistos
   }
-  document.getElementById('closeStoryBtn').onclick = closeStory;
-  document.getElementById('storyView').addEventListener('click', (e)=>{ if(e.target.id==='storyView') closeStory(); });
+  document.getElementById('closeStoryBtn').onclick = (e)=>{ e.stopPropagation(); closeStory(); };
 
   // ---------- Câmera ----------
   async function openCamera(){
@@ -2104,6 +2247,7 @@
   document.getElementById('closePreviewBtn').onclick = document.getElementById('discardBtn').onclick = ()=>{
     document.getElementById('previewView').classList.remove('active');
     document.getElementById('previewMediaWrap').innerHTML = '';
+    resetPreviewMode();
   };
   document.getElementById('aiSuggestBtn').onclick = ()=>{
     const idea = CAPTION_IDEAS[Math.floor(Math.random()*CAPTION_IDEAS.length)];
@@ -2112,22 +2256,32 @@
 
   document.getElementById('shareBtn').onclick = async ()=>{
     const shareBtn = document.getElementById('shareBtn');
+    const isStory = document.getElementById('previewView').dataset.mode === 'story';
     shareBtn.disabled = true;
     document.getElementById('uploadProgress').classList.add('show');
     try{
       if(!currentUser) throw new Error('Não autenticado');
-      const caption = document.getElementById('captionInput').value.trim() || 'novo momento capturado ✨';
-      const loc = document.getElementById('locInput').value.trim() || 'Agora';
-      await createPost({ caption, loc, mediaType: capturedMediaType, blob: capturedBlob, thumbDataUrl: capturedThumb });
-      document.getElementById('previewView').classList.remove('active');
-      document.getElementById('previewMediaWrap').innerHTML = '';
-      document.getElementById('cameraView').classList.remove('active');
-      stopStream();
-      switchView('feed');
-      showToast('Publicado para todos!');
+      if(isStory){
+        if(!pendingStoryBlob) throw new Error('Sem mídia');
+        await publishStory(pendingStoryBlob);
+        document.getElementById('previewView').classList.remove('active');
+        document.getElementById('previewMediaWrap').innerHTML = '';
+        resetPreviewMode();
+        switchView('feed');
+      } else {
+        const caption = document.getElementById('captionInput').value.trim() || 'novo momento capturado ✨';
+        const loc = document.getElementById('locInput').value.trim() || 'Agora';
+        await createPost({ caption, loc, mediaType: capturedMediaType, blob: capturedBlob, thumbDataUrl: capturedThumb });
+        document.getElementById('previewView').classList.remove('active');
+        document.getElementById('previewMediaWrap').innerHTML = '';
+        document.getElementById('cameraView').classList.remove('active');
+        stopStream();
+        switchView('feed');
+        showToast('Publicado para todos!');
+      }
     } catch(err){
       console.error(err);
-      showToast('Erro ao publicar. Verifique Firestore e as regras.');
+      showToast(isStory ? 'Erro ao publicar story' : 'Erro ao publicar. Verifique Firestore e as regras.');
     } finally {
       shareBtn.disabled = false;
       document.getElementById('uploadProgress').classList.remove('show');
@@ -2183,16 +2337,8 @@
   document.getElementById('storyFileInput')?.addEventListener('change', async (e)=>{
     const file = e.target.files?.[0];
     if(!file) return;
-    try{
-      document.getElementById('uploadProgress').classList.add('show');
-      await publishStory(file);
-    }catch(err){
-      console.error(err);
-      showToast('Erro ao publicar story');
-    }finally{
-      document.getElementById('uploadProgress').classList.remove('show');
-      e.target.value = '';
-    }
+    openStoryPreview(file);
+    e.target.value = '';
   });
 
   (async function init(){
