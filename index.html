@@ -448,6 +448,19 @@
     color:var(--text); border-radius:14px; padding:10px; font-family:'Space Grotesk'; font-weight:600; font-size:13px; cursor:pointer;
   }
 
+
+  .profile-avatar img, #editAvatarPreview img{ width:100%;height:100%;object-fit:cover;border-radius:50%; }
+  .profile-avatar{ overflow:hidden; }
+  #editProfileBackdrop{ display:none; position:absolute; inset:0; background:rgba(0,0,0,0.65); z-index:80; }
+  #editProfileBackdrop.active{ display:block; }
+  .follow-btn{
+    margin:0 20px 10px; width:calc(100% - 40px); border:none; border-radius:14px; padding:10px;
+    font-family:'Space Grotesk'; font-weight:600; font-size:13px; cursor:pointer;
+    background:linear-gradient(120deg, var(--cyan), var(--magenta)); color:#0A0A10;
+  }
+  .follow-btn.following{ background:var(--glass-2); color:var(--text); border:1px solid var(--stroke); }
+  .story.seen .ring-spin{ animation:none; background:var(--glass-2); }
+
 </style>
 </head>
 <body>
@@ -553,15 +566,16 @@
 
   <div class="view" id="view-profile">
     <div class="profile-head">
-      <div class="profile-avatar"><span id="profileInitial">Y</span></div>
+      <div class="profile-avatar" id="profileAvatarWrap"><span id="profileInitial">Y</span></div>
       <div class="profile-stats">
         <div><div class="num" id="myPostCount">0</div><div class="lbl">posts</div></div>
-        <div><div class="num">1.2k</div><div class="lbl">seguidores</div></div>
-        <div><div class="num">318</div><div class="lbl">seguindo</div></div>
+        <div><div class="num" id="followersCount">0</div><div class="lbl">seguidores</div></div>
+        <div><div class="num" id="followingCount">0</div><div class="lbl">seguindo</div></div>
       </div>
     </div>
-    <div class="profile-bio"><b>voce</b>capturando frequencias boas ✨ modo holograma ativado</div>
-    <button class="profile-edit-btn" id="logoutBtn">Sair da conta</button>
+    <div class="profile-bio" id="profileBio"><b id="profileNameLabel">@voce</b><span id="profileBioText">Bem-vindo ao VIBE ✨</span></div>
+    <button class="profile-edit-btn" id="editProfileBtn" style="margin-bottom:8px;">Editar perfil</button>
+    <button class="profile-edit-btn" id="logoutBtn" style="opacity:0.7;font-size:12px;padding:8px;">Sair da conta</button>
     <div class="profile-tabs">
       <div class="profile-tab active" data-tab="posts">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -679,6 +693,34 @@
 
   <div class="upload-progress" id="uploadProgress"><div class="spinner"></div><span>Publicando...</span></div>
 
+  
+  <!-- Edit Profile Sheet -->
+  <div class="sheet-backdrop" id="editProfileBackdrop" style="z-index:80;">
+    <div class="comments-sheet active" id="editProfileSheet" style="transform:translateY(0);max-height:90%;">
+      <div class="sheet-handle"></div>
+      <div class="sheet-title">Editar perfil</div>
+      <div style="padding:0 18px 20px;overflow-y:auto;">
+        <div style="text-align:center;margin-bottom:16px;">
+          <div id="editAvatarPreview" style="width:80px;height:80px;border-radius:50%;margin:0 auto 10px;background:var(--glass-2);display:flex;align-items:center;justify-content:center;font-family:Space Grotesk;font-weight:700;font-size:28px;overflow:hidden;border:2px solid var(--stroke);"></div>
+          <button type="button" id="changePhotoBtn" style="background:none;border:none;color:var(--cyan);font-weight:600;font-size:13px;cursor:pointer;">Alterar foto</button>
+          <input type="file" id="profilePhotoInput" accept="image/*" style="display:none;">
+        </div>
+        <div class="auth-field">
+          <label>Nome de usuário</label>
+          <input type="text" id="editUsername" maxlength="24" placeholder="seu_usuario">
+        </div>
+        <div class="auth-field">
+          <label>Bio</label>
+          <textarea id="editBio" rows="3" maxlength="150" placeholder="Sobre você..." style="width:100%;background:rgba(0,0,0,0.35);border:1px solid var(--stroke);border-radius:14px;padding:12px 14px;color:var(--text);font-size:14px;font-family:Inter;resize:none;"></textarea>
+        </div>
+        <div class="auth-error" id="editProfileError"></div>
+        <button class="auth-btn" id="saveProfileBtn">Salvar</button>
+        <button type="button" id="closeEditProfile" style="width:100%;margin-top:10px;background:none;border:none;color:var(--muted);padding:12px;cursor:pointer;font-size:13px;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="storyFileInput" accept="image/*" style="display:none;">
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -770,19 +812,17 @@
   let profileTab = 'posts';
   let mySavedIds = new Set();   // ids salvos localmente (por enquanto)
 
-  // Stories estáticos (podem virar dinâmicos depois)
-  const STORY_USERS = [
-    {user:'mia.rocha', img:'https://picsum.photos/seed/story1/500/900'},
-    {user:'thecoffeeguy', img:'https://picsum.photos/seed/story2/500/900'},
-    {user:'nightowl.rec', img:'https://picsum.photos/seed/story3/500/900'},
-    {user:'trilhaverde', img:'https://picsum.photos/seed/story4/500/900'},
-    {user:'gabi.fotos', img:'https://picsum.photos/seed/story5/500/900'}
-  ];
-  let ACTIVITY = [
-    {avatar:'mia.rocha', text:'curtiu sua foto', time:'3min'},
-    {avatar:'thecoffeeguy', text:'comecou a seguir voce', time:'25min'},
-    {avatar:'nightowl.rec', text:'comentou: "muito bom!"', time:'1h'}
-  ];
+  // Stories + notificações + follows (Firestore)
+  let liveStories = [];      // [{id, userId, user, img, createdAt}]
+  let notifications = [];    // notificações do usuário atual
+  let unsubNotifs = null;
+  let unsubStories = null;
+  let followingIds = new Set();
+  let followersCount = 0;
+  let followingCount = 0;
+  let viewingUserId = null;  // perfil de outro usuário (null = próprio)
+  let pendingProfilePhoto = null; // dataURL ao editar foto
+
 
   // ---------- Auth (login / cadastro / Google) ----------
   const googleProvider = new GoogleAuthProvider();
@@ -865,6 +905,9 @@
     updateProfileUI();
     showAuthScreen(false);
     startFeedListener();
+    startStoriesListener();
+    startNotifsListener();
+    await loadFollowStats();
     renderAll();
   }
 
@@ -963,12 +1006,17 @@
   function updateProfileUI(){
     if(!currentUser) return;
     const init = initials(currentUser.displayName);
-    document.getElementById('profileInitial').textContent = init;
-    document.getElementById('profileDotBtn').textContent = init;
-    const bioEl = document.querySelector('.profile-bio');
-    if(bioEl){
-      bioEl.innerHTML = `<b>@${currentUser.username || currentUser.displayName}</b>${currentUser.bio || 'Bem-vindo ao VIBE ✨'}`;
+    const avatarWrap = document.getElementById('profileAvatarWrap');
+    if(currentUser.photoURL){
+      avatarWrap.innerHTML = `<img src="${currentUser.photoURL}" alt="" style="width:70px;height:70px;border-radius:50%;object-fit:cover;">`;
+    } else {
+      avatarWrap.innerHTML = `<span id="profileInitial">${init}</span>`;
     }
+    document.getElementById('profileDotBtn').textContent = init;
+    const nameEl = document.getElementById('profileNameLabel');
+    const bioEl = document.getElementById('profileBioText');
+    if(nameEl) nameEl.textContent = '@' + (currentUser.username || currentUser.displayName);
+    if(bioEl) bioEl.textContent = currentUser.bio || 'Bem-vindo ao VIBE ✨';
   }
 
   // bind auth UI
@@ -1094,6 +1142,23 @@
   }
 
   // ---------- Like ----------
+  async function createNotification({toUserId, type, text, postId, thumb}){
+    if(!currentUser || !toUserId || toUserId === currentUser.uid) return;
+    try{
+      await addDoc(collection(db,'notifications'), {
+        toUserId,
+        fromUserId: currentUser.uid,
+        fromUser: currentUser.displayName,
+        type, // like | comment | follow
+        text,
+        postId: postId || null,
+        thumb: thumb || null,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    }catch(e){ console.warn('notif', e); }
+  }
+
   async function toggleLike(postId){
     if(!currentUser) return;
     const p = posts.find(x=>x.id===postId);
@@ -1109,12 +1174,20 @@
         likes: (p.likes||0)+1,
         likedBy: arrayUnion(currentUser.uid)
       });
+      await createNotification({
+        toUserId: p.userId,
+        type: 'like',
+        text: 'curtiu sua publicação',
+        postId: p.id,
+        thumb: p.thumbUrl || p.mediaUrl
+      });
     }
   }
 
   // ---------- Comentário ----------
   async function addComment(postId, text){
     if(!currentUser || !text.trim()) return;
+    const p = posts.find(x=>x.id===postId);
     const refPost = doc(db,'posts',postId);
     await updateDoc(refPost, {
       comments: arrayUnion({
@@ -1124,6 +1197,191 @@
         at: Date.now()
       })
     });
+    if(p){
+      await createNotification({
+        toUserId: p.userId,
+        type: 'comment',
+        text: 'comentou: "' + text.trim().slice(0,40) + (text.trim().length>40?'...':'') + '"',
+        postId: p.id,
+        thumb: p.thumbUrl || p.mediaUrl
+      });
+    }
+  }
+
+  // ---------- Follow ----------
+  async function loadFollowStats(){
+    if(!currentUser) return;
+    try{
+      const followingSnap = await getDocs(collection(db,'users', currentUser.uid, 'following'));
+      followingIds = new Set(followingSnap.docs.map(d=>d.id));
+      followingCount = followingIds.size;
+      const followersSnap = await getDocs(collection(db,'users', currentUser.uid, 'followers'));
+      followersCount = followersSnap.size;
+      document.getElementById('followersCount').textContent = followersCount;
+      document.getElementById('followingCount').textContent = followingCount;
+    }catch(e){ console.warn('follow stats', e); }
+  }
+
+  async function toggleFollow(targetUserId, targetUsername){
+    if(!currentUser || targetUserId === currentUser.uid) return;
+    const isFollowing = followingIds.has(targetUserId);
+    const myFollowing = doc(db,'users', currentUser.uid, 'following', targetUserId);
+    const theirFollowers = doc(db,'users', targetUserId, 'followers', currentUser.uid);
+    if(isFollowing){
+      await deleteDoc(myFollowing);
+      await deleteDoc(theirFollowers);
+      followingIds.delete(targetUserId);
+      followingCount = Math.max(0, followingCount-1);
+    } else {
+      await setDoc(myFollowing, { username: targetUsername, at: serverTimestamp() });
+      await setDoc(theirFollowers, { username: currentUser.displayName, at: serverTimestamp() });
+      followingIds.add(targetUserId);
+      followingCount++;
+      await createNotification({
+        toUserId: targetUserId,
+        type: 'follow',
+        text: 'começou a seguir você'
+      });
+    }
+    document.getElementById('followingCount').textContent = followingCount;
+    renderProfile();
+  }
+
+  // ---------- Stories ----------
+  function startStoriesListener(){
+    if(unsubStories) unsubStories();
+    const since = new Date(Date.now() - 24*60*60*1000);
+    const q = query(collection(db,'stories'), orderBy('createdAt','desc'), limit(40));
+    unsubStories = onSnapshot(q, (snap)=>{
+      const now = Date.now();
+      liveStories = snap.docs.map(d=>{
+        const data = d.data();
+        const created = data.createdAt?.toDate ? data.createdAt.toDate().getTime() : (data.createdAt || 0);
+        return {
+          id: d.id,
+          userId: data.userId,
+          user: data.user,
+          img: data.mediaUrl,
+          createdAt: created
+        };
+      }).filter(s => s.createdAt > now - 24*60*60*1000);
+      renderStories();
+    }, err => console.warn('stories', err));
+  }
+
+  async function publishStory(blob){
+    if(!currentUser) return;
+    const mediaUrl = await compressImage(blob, 540, 0.5);
+    if(mediaUrl.length > 900000){ showToast('Imagem muito grande'); return; }
+    await addDoc(collection(db,'stories'), {
+      userId: currentUser.uid,
+      user: currentUser.displayName,
+      mediaUrl,
+      createdAt: serverTimestamp()
+    });
+    showToast('Story publicado!');
+  }
+
+  // ---------- Notifications listener ----------
+  function startNotifsListener(){
+    if(unsubNotifs) unsubNotifs();
+    if(!currentUser) return;
+    // só where (sem orderBy) para não exigir índice composto no Firestore
+    const q = query(
+      collection(db,'notifications'),
+      where('toUserId','==', currentUser.uid),
+      limit(50)
+    );
+    unsubNotifs = onSnapshot(q, (snap)=>{
+      notifications = snap.docs.map(d=>{
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          time: timeAgo(data.createdAt),
+          _ts: data.createdAt?.toMillis ? data.createdAt.toMillis() : 0
+        };
+      }).sort((a,b)=> b._ts - a._ts);
+      const hasUnread = notifications.some(n => !n.read);
+      hasUnseenActivity = hasUnread;
+      document.getElementById('activityBadge').classList.toggle('show', hasUnread);
+      document.getElementById('navActivityDot').classList.toggle('show', hasUnread);
+      if(document.getElementById('view-activity').classList.contains('active')){
+        renderActivity();
+      }
+    }, err => {
+      console.warn('notifs listener', err);
+      // se faltar índice, ainda funciona sem orderBy complexo — fallback silencioso
+    });
+  }
+
+  async function markNotifsRead(){
+    const unread = notifications.filter(n => !n.read);
+    for(const n of unread){
+      try{ await updateDoc(doc(db,'notifications', n.id), { read: true }); }catch(e){}
+    }
+  }
+
+  // ---------- Editar perfil ----------
+  function openEditProfile(){
+    if(!currentUser) return;
+    pendingProfilePhoto = null;
+    document.getElementById('editUsername').value = currentUser.username || currentUser.displayName || '';
+    document.getElementById('editBio').value = currentUser.bio || '';
+    const prev = document.getElementById('editAvatarPreview');
+    if(currentUser.photoURL){
+      prev.innerHTML = `<img src="${currentUser.photoURL}" alt="">`;
+    } else {
+      prev.style.background = gradFor(currentUser.displayName);
+      prev.textContent = initials(currentUser.displayName);
+    }
+    document.getElementById('editProfileError').classList.remove('show');
+    document.getElementById('editProfileBackdrop').classList.add('active');
+  }
+  function closeEditProfile(){
+    document.getElementById('editProfileBackdrop').classList.remove('active');
+  }
+  async function saveProfile(){
+    if(!currentUser) return;
+    let username = normalizeUsername(document.getElementById('editUsername').value);
+    const bio = document.getElementById('editBio').value.trim().slice(0,150);
+    const errEl = document.getElementById('editProfileError');
+    if(!username || username.length < 3){
+      errEl.textContent = 'Usuário inválido (mín. 3 caracteres)';
+      errEl.classList.add('show');
+      return;
+    }
+    try{
+      const oldUsername = currentUser.username || currentUser.displayName;
+      if(username !== oldUsername){
+        if(await isUsernameTaken(username)){
+          errEl.textContent = 'Esse nome de usuário já está em uso';
+          errEl.classList.add('show');
+          return;
+        }
+        // libera antigo e reserva novo
+        try{ await deleteDoc(doc(db,'usernames', oldUsername)); }catch(e){}
+        await setDoc(doc(db,'usernames', username), { uid: currentUser.uid });
+      }
+      const updates = { username, displayName: username, bio, updatedAt: serverTimestamp() };
+      if(pendingProfilePhoto){
+        updates.photoURL = pendingProfilePhoto;
+      }
+      await setDoc(doc(db,'users', currentUser.uid), updates, {merge:true});
+      try{ await updateProfile(auth.currentUser, { displayName: username }); }catch(e){}
+      currentUser.username = username;
+      currentUser.displayName = username;
+      currentUser.bio = bio;
+      if(pendingProfilePhoto) currentUser.photoURL = pendingProfilePhoto;
+      updateProfileUI();
+      closeEditProfile();
+      showToast('Perfil atualizado!');
+      renderProfile();
+    }catch(e){
+      console.error(e);
+      errEl.textContent = 'Erro ao salvar. Tente de novo.';
+      errEl.classList.add('show');
+    }
   }
 
   // ---------- Excluir ----------
@@ -1141,15 +1399,26 @@
   function renderStories(){
     const row = document.getElementById('storiesRow');
     row.innerHTML = '';
+    // Seu story
     const you = document.createElement('div');
     you.className = 'story';
-    you.innerHTML = `<div class="ring-spin you-add"><div class="avatar" style="background:${gradFor(currentUser?.displayName||'voce')};">${initials(currentUser?.displayName||'Y')}<div class="plus-badge">+</div></div></div><span>Seu story</span>`;
-    you.onclick = openCamera;
+    const myPhoto = currentUser?.photoURL
+      ? `<img src="${currentUser.photoURL}" alt="">`
+      : initials(currentUser?.displayName||'Y');
+    const myBg = currentUser?.photoURL ? '' : `background:${gradFor(currentUser?.displayName||'voce')};`;
+    you.innerHTML = `<div class="ring-spin you-add"><div class="avatar" style="${myBg}">${myPhoto}<div class="plus-badge">+</div></div></div><span>Seu story</span>`;
+    you.onclick = ()=> document.getElementById('storyFileInput').click();
     row.appendChild(you);
-    STORY_USERS.forEach(s=>{
+    // Agrupa por usuário (1 story por user na barra; ao abrir mostra o mais recente)
+    const byUser = {};
+    liveStories.forEach(s=>{
+      if(!byUser[s.userId] || s.createdAt > byUser[s.userId].createdAt) byUser[s.userId] = s;
+    });
+    Object.values(byUser).forEach(s=>{
+      if(currentUser && s.userId === currentUser.uid) return; // já tem o "seu"
       const el = document.createElement('div');
       el.className = 'story';
-      el.innerHTML = `<div class="ring-spin"><div class="avatar" style="background:${gradFor(s.user)};">${initials(s.user)}</div></div><span>${s.user.split('.')[0]}</span>`;
+      el.innerHTML = `<div class="ring-spin"><div class="avatar" style="background:${gradFor(s.user)};">${initials(s.user)}</div></div><span>${(s.user||'').split(/[._]/)[0].slice(0,8)}</span>`;
       el.onclick = ()=> openStory(s);
       row.appendChild(el);
     });
@@ -1163,7 +1432,7 @@
     el.innerHTML = `
       <div class="post-head">
         <div class="avatar" style="background:${gradFor(p.user)};">${initials(p.user)}</div>
-        <div class="who"><div class="uname">${p.user}${isMine ? '<span class="you-tag">VOCE</span>' : ''}</div><div class="loc">${p.loc||''}</div></div>
+        <div class="who"><div class="uname" data-uid="${p.userId}" data-uname="${p.user}" style="cursor:pointer;">${p.user}${isMine ? '<span class="you-tag">VOCE</span>' : ''}${(!isMine && followingIds.has(p.userId)) ? ' · <span style="color:var(--muted);font-size:11px;">seguindo</span>' : ''}</div><div class="loc">${p.loc||''}</div></div>
         <button class="icon-btn menu-btn" style="background:transparent;border:none;"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
       </div>
       <div class="post-img-wrap">
@@ -1191,6 +1460,20 @@
     `;
 
     // eventos
+    const unameEl = el.querySelector('.uname');
+    if(unameEl && !isMine){
+      unameEl.onclick = async (e)=>{
+        e.stopPropagation();
+        const uid = unameEl.dataset.uid;
+        const un = unameEl.dataset.uname;
+        if(!uid) return;
+        const following = followingIds.has(uid);
+        if(confirm(following ? `Deixar de seguir @${un}?` : `Seguir @${un}?`)){
+          await toggleFollow(uid, un);
+          renderFeed();
+        }
+      };
+    }
     const heartBtn = el.querySelector('.heart-btn');
     heartBtn.onclick = async ()=>{
       heartBtn.classList.toggle('liked');
@@ -1280,15 +1563,22 @@
   function renderActivity(){
     const list = document.getElementById('activityList');
     list.innerHTML = '';
-    ACTIVITY.forEach(a=>{
-      const row = document.createElement('div');
-      row.className = 'activity-item';
-      row.innerHTML = `
-        <div class="avatar" style="background:${gradFor(a.avatar)};">${initials(a.avatar)}</div>
-        <div class="txt"><span class="u">${a.avatar}</span> ${a.text} <div class="time">${a.time}</div></div>
-      `;
-      list.appendChild(row);
-    });
+    if(!notifications.length){
+      list.innerHTML = '<div class="empty-state" style="padding:40px 20px;">Nenhuma notificação ainda</div>';
+    } else {
+      notifications.forEach(a=>{
+        const row = document.createElement('div');
+        row.className = 'activity-item';
+        const thumb = a.thumb ? `<img class="thumb" src="${a.thumb}">` : '';
+        row.innerHTML = `
+          <div class="avatar" style="background:${gradFor(a.fromUser)};">${initials(a.fromUser)}</div>
+          <div class="txt"><span class="u">${a.fromUser||'alguém'}</span> ${a.text||''} <div class="time">${a.time||''}</div></div>
+          ${thumb}
+        `;
+        list.appendChild(row);
+      });
+    }
+    markNotifsRead();
     hasUnseenActivity = false;
     document.getElementById('activityBadge').classList.remove('show');
     document.getElementById('navActivityDot').classList.remove('show');
@@ -1299,6 +1589,9 @@
     const mine = posts.filter(p=>p.userId === currentUser.uid);
     const saved = posts.filter(p=>mySavedIds.has(p.id));
     document.getElementById('myPostCount').textContent = mine.length;
+    document.getElementById('followersCount').textContent = followersCount;
+    document.getElementById('followingCount').textContent = followingCount;
+    updateProfileUI();
     const wrap = document.getElementById('myGridWrap');
     const list = profileTab === 'posts' ? mine : saved;
     if(list.length===0){
@@ -1453,14 +1746,28 @@
     document.getElementById('storyUname').textContent = s.user;
     document.getElementById('storyImg').src = s.img;
     const prog = document.getElementById('storyProgress');
-    prog.innerHTML = STORY_USERS.map(()=> '<div class="bar"><i></i></div>').join('');
-    const idx = STORY_USERS.indexOf(s);
+    // todos os stories deste usuário nas últimas 24h
+    const userStories = liveStories.filter(x=>x.userId===s.userId).sort((a,b)=>a.createdAt-b.createdAt);
+    const list = userStories.length ? userStories : [s];
+    let idx = Math.max(0, list.findIndex(x=>x.id===s.id));
+    if(idx < 0) idx = list.length-1;
+    prog.innerHTML = list.map(()=> '<div class="bar"><i></i></div>').join('');
     const bars = prog.querySelectorAll('.bar');
     bars.forEach((b,i)=>{ if(i<idx) b.classList.add('done'); });
     if(bars[idx]) bars[idx].classList.add('playing');
+    document.getElementById('storyImg').src = list[idx].img;
     document.getElementById('storyView').classList.add('active');
     clearTimeout(storyTimer);
-    storyTimer = setTimeout(closeStory, 4000);
+    const advance = ()=>{
+      bars[idx]?.classList.remove('playing');
+      bars[idx]?.classList.add('done');
+      idx++;
+      if(idx >= list.length){ closeStory(); return; }
+      document.getElementById('storyImg').src = list[idx].img;
+      bars[idx]?.classList.add('playing');
+      storyTimer = setTimeout(advance, 4000);
+    };
+    storyTimer = setTimeout(advance, 4000);
   }
   function closeStory(){
     document.getElementById('storyView').classList.remove('active');
@@ -1702,6 +2009,35 @@
 
   // ---------- Init ----------
   document.getElementById('logoutBtn')?.addEventListener('click', doLogout);
+  document.getElementById('editProfileBtn')?.addEventListener('click', openEditProfile);
+  document.getElementById('closeEditProfile')?.addEventListener('click', closeEditProfile);
+  document.getElementById('saveProfileBtn')?.addEventListener('click', saveProfile);
+  document.getElementById('changePhotoBtn')?.addEventListener('click', ()=> document.getElementById('profilePhotoInput').click());
+  document.getElementById('profilePhotoInput')?.addEventListener('change', async (e)=>{
+    const file = e.target.files?.[0];
+    if(!file) return;
+    pendingProfilePhoto = await compressImage(file, 320, 0.55);
+    const prev = document.getElementById('editAvatarPreview');
+    prev.innerHTML = `<img src="${pendingProfilePhoto}" alt="">`;
+    e.target.value = '';
+  });
+  document.getElementById('editProfileBackdrop')?.addEventListener('click', (e)=>{
+    if(e.target.id==='editProfileBackdrop') closeEditProfile();
+  });
+  document.getElementById('storyFileInput')?.addEventListener('change', async (e)=>{
+    const file = e.target.files?.[0];
+    if(!file) return;
+    try{
+      document.getElementById('uploadProgress').classList.add('show');
+      await publishStory(file);
+    }catch(err){
+      console.error(err);
+      showToast('Erro ao publicar story');
+    }finally{
+      document.getElementById('uploadProgress').classList.remove('show');
+      e.target.value = '';
+    }
+  });
 
   (async function init(){
     try{

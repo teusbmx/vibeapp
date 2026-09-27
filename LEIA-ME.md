@@ -1,19 +1,12 @@
-# VIBE — multi-usuário com login/cadastro
+# VIBE — login + stories + perfil + seguidores + notificações
 
-## Contas de verdade
-- Cada pessoa cria conta com **e-mail + senha** ou **Google**
-- Nome de usuário único (@usuario)
-- Tela de login/cadastro antes de entrar no app
-- Botão “Sair da conta” no perfil
+## Novidades
+- Stories reais (24h) — toque em “Seu story” e escolha uma foto
+- Editar perfil: foto, @usuário e bio
+- Seguidores / seguindo reais
+- Notificações reais (curtida, comentário, novo seguidor)
 
-## Configuração Firebase
-
-### 1. Authentication
-- **E-mail/senha** → ATIVAR
-- **Google** → ATIVAR (opcional, mas recomendado)
-- Anônimo pode ficar desativado
-
-### 2. Firestore — regras (cole e publique)
+## Regras Firestore (cole e publique)
 
 ```
 rules_version = '2';
@@ -28,22 +21,39 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if true;
       allow write: if request.auth != null && request.auth.uid == userId;
+      match /following/{id} {
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+      match /followers/{id} {
+        allow read: if true;
+        allow write: if request.auth != null;
+      }
     }
     match /usernames/{name} {
       allow read: if true;
       allow create: if request.auth != null;
+      allow delete: if request.auth != null;
       allow update: if false;
-      allow delete: if false;
+    }
+    match /stories/{id} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+    match /notifications/{id} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.toUserId;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null && request.auth.uid == resource.data.toUserId;
+      allow delete: if request.auth != null && request.auth.uid == resource.data.toUserId;
     }
   }
 }
 ```
 
-### 3. Chaves
-Já estão no `index.html` do projeto vibeapp-53553.
-
-## Deploy
-Suba de novo no Vercel/Netlify (substitua os arquivos).
-
-## Limitação
-Fotos em base64 no Firestore (plano gratuito). Vídeos viram thumbnail.
+## Como usar
+1. Publique as regras acima
+2. Suba o ZIP no Vercel (substitua os arquivos)
+3. Stories: toque no círculo “Seu story”
+4. Perfil: botão “Editar perfil”
+5. Notificações aparecem na aba de atividade (coração)
