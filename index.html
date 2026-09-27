@@ -190,6 +190,7 @@
     background:linear-gradient(120deg, var(--cyan), var(--magenta), var(--lime));
     background-size:250% auto; animation:hueflow 5s linear infinite;
   }
+  .nav-btn .profile-dot img{ width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; }
   .nav-btn .profile-dot{
     width:24px;height:24px;border-radius:50%;
     background:linear-gradient(135deg, var(--lime), var(--cyan));
@@ -309,7 +310,7 @@
   .story-progress .bar{ flex:1; height:2.5px; background:rgba(255,255,255,0.25); border-radius:2px; overflow:hidden; }
   .story-progress .bar i{ display:block; height:100%; width:0%; background:linear-gradient(90deg, var(--cyan), var(--magenta)); }
   .story-progress .bar.done i{ width:100%; }
-  .story-progress .bar.playing i{ animation:fill 4s linear forwards; }
+  .story-progress .bar.playing i{ /* progresso controlado via JS para permitir pause */ }
   @keyframes fill{ from{width:0%;} to{width:100%;} }
   .story-head{ display:flex; align-items:center; gap:8px; padding:10px 14px; }
   .story-head .avatar{ width:30px;height:30px;border-radius:50%; display:flex;align-items:center;justify-content:center; font-family:'Space Grotesk'; font-weight:700; font-size:12px; color:#0A0A10;}
@@ -1022,7 +1023,19 @@
     } else {
       avatarWrap.innerHTML = `<span id="profileInitial">${init}</span>`;
     }
-    document.getElementById('profileDotBtn').textContent = init;
+    // mini foto na navbar inferior
+    const dot = document.getElementById('profileDotBtn');
+    if(dot){
+      if(currentUser.photoURL){
+        dot.style.background = 'transparent';
+        dot.style.padding = '0';
+        dot.style.overflow = 'hidden';
+        dot.innerHTML = `<img src="${currentUser.photoURL}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;">`;
+      } else {
+        dot.style.background = '';
+        dot.textContent = init;
+      }
+    }
     const nameEl = document.getElementById('profileNameLabel');
     const bioEl = document.getElementById('profileBioText');
     if(nameEl) nameEl.textContent = '@' + (currentUser.username || currentUser.displayName);
@@ -1490,31 +1503,41 @@
   function renderStories(){
     const row = document.getElementById('storiesRow');
     row.innerHTML = '';
-    // Seu story
+    // Seu story (sempre; pode postar quantos quiser)
     const you = document.createElement('div');
     you.className = 'story';
     const myPhoto = currentUser?.photoURL
       ? `<img src="${currentUser.photoURL}" alt="">`
       : initials(currentUser?.displayName||'Y');
-    const myBg = currentUser?.photoURL ? '' : `background:${gradFor(currentUser?.displayName||'voce')};`;
-    you.innerHTML = `<div class="ring-spin you-add"><div class="avatar" style="${myBg}">${myPhoto}<div class="plus-badge">+</div></div></div><span>Seu story</span>`;
+    const myBg = currentUser?.photoURL ? 'transparent' : gradFor(currentUser?.displayName||'voce');
+    // se você tem stories não vistos próprios, anel ativo; senão só o +
+    const myUnseen = liveStories.some(s => s.userId === currentUser?.uid && !seenStoryIds.has(s.id));
+    you.innerHTML = `<div class="ring-spin you-add ${myUnseen?'':'seen'}"><div class="avatar" style="background:${myBg};">${myPhoto}<div class="plus-badge">+</div></div></div><span>Seu story</span>`;
     you.onclick = ()=> document.getElementById('storyFileInput').click();
+    // long-press or second action: if has own unseen, could open - for now + always adds
+    // double-tap own ring to view own sequence? keep simple: + = new story
     row.appendChild(you);
-    // Agrupa por usuário — só mostra se houver story ainda NÃO visto
+
+    // Só de quem você SEGUE + ainda tem story não visto (sequência por usuário)
     const byUser = {};
     liveStories.forEach(s=>{
-      if(seenStoryIds.has(s.id)) return; // visualização única: já visto some da barra
-      if(!byUser[s.userId] || s.createdAt > byUser[s.userId].createdAt) byUser[s.userId] = s;
-    });
-    Object.values(byUser).forEach(s=>{
       if(currentUser && s.userId === currentUser.uid) return;
+      if(!followingIds.has(s.userId)) return; // só seguindo
+      if(seenStoryIds.has(s.id)) return;
+      if(!byUser[s.userId]) byUser[s.userId] = [];
+      byUser[s.userId].push(s);
+    });
+    Object.keys(byUser).forEach(uid=>{
+      const list = byUser[uid].sort((a,b)=>a.createdAt-b.createdAt);
+      const s = list[0]; // mostra anel; ao abrir roda a sequência completa
       const el = document.createElement('div');
       el.className = 'story';
       const av = s.userPhoto
         ? `<img src="${s.userPhoto}" alt="">`
         : initials(s.user);
       const bg = s.userPhoto ? 'transparent' : gradFor(s.user);
-      el.innerHTML = `<div class="ring-spin"><div class="avatar" style="background:${bg};">${av}</div></div><span>${(s.user||'').split(/[._]/)[0].slice(0,8)}</span>`;
+      const count = list.length > 1 ? `<span style="position:absolute;bottom:-2px;right:-2px;background:var(--magenta);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 4px;border:2px solid #0B0B14;">${list.length}</span>` : '';
+      el.innerHTML = `<div class="ring-spin" style="position:relative;"><div class="avatar" style="background:${bg};">${av}</div>${count}</div><span>${(s.user||'').split(/[._]/)[0].slice(0,8)}</span>`;
       el.onclick = ()=> openStory(s);
       row.appendChild(el);
     });
@@ -1960,120 +1983,156 @@
 
   // ---------- Stories ----------
   let storyTimer = null;
-  let storyResumeTimer = null;
-  let storyPauseStarted = 0;
+  // ---- Story viewer (sequência + pause + visualização única) ----
+  let storyTimer = null;
+  let storyPaused = false;
   let storyRemainingMs = 4000;
-  let storyAdvanceFn = null;
+  let storySegmentStarted = 0;
+  let storyList = [];
+  let storyIdx = 0;
+  let storyBars = null;
+
+  function clearStoryTimer(){
+    if(storyTimer){ clearTimeout(storyTimer); storyTimer = null; }
+  }
 
   function openStory(s){
+    clearStoryTimer();
     storyPaused = false;
     storyRemainingMs = 4000;
-    document.getElementById('storyAvatar').style.background = gradFor(s.user);
-    document.getElementById('storyAvatar').textContent = initials(s.user);
-    if(s.userPhoto){
-      document.getElementById('storyAvatar').innerHTML = `<img src="${s.userPhoto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-      document.getElementById('storyAvatar').style.background = 'transparent';
+
+    // sequência: todos os stories NÃO vistos deste usuário (quem você segue)
+    storyList = liveStories
+      .filter(x => x.userId === s.userId && !seenStoryIds.has(x.id))
+      .sort((a,b) => a.createdAt - b.createdAt);
+    if(!storyList.length){
+      if(!seenStoryIds.has(s.id)) storyList = [s];
     }
-    document.getElementById('storyUname').textContent = s.user;
-    const prog = document.getElementById('storyProgress');
-    const userStories = liveStories
-      .filter(x=>x.userId===s.userId && !seenStoryIds.has(x.id))
-      .sort((a,b)=>a.createdAt-b.createdAt);
-    const list = userStories.length ? userStories : (seenStoryIds.has(s.id) ? [] : [s]);
-    if(!list.length){
+    if(!storyList.length){
       showToast('Story já visualizado');
       renderStories();
       return;
     }
-    let idx = Math.max(0, list.findIndex(x=>x.id===s.id));
-    if(idx < 0) idx = 0;
-    prog.innerHTML = list.map(()=> '<div class="bar"><i></i></div>').join('');
-    const bars = prog.querySelectorAll('.bar');
-    // anima a barra com CSS variable
-    bars.forEach(b=>{
-      const i = b.querySelector('i');
-      if(i){ i.style.animation = 'none'; i.style.width = '0%'; }
+    storyIdx = Math.max(0, storyList.findIndex(x => x.id === s.id));
+    if(storyIdx < 0) storyIdx = 0;
+
+    const av = document.getElementById('storyAvatar');
+    av.style.background = s.userPhoto ? 'transparent' : gradFor(s.user);
+    if(s.userPhoto){
+      av.innerHTML = `<img src="${s.userPhoto}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+      av.textContent = initials(s.user);
+    }
+    document.getElementById('storyUname').textContent = s.user;
+
+    const prog = document.getElementById('storyProgress');
+    prog.innerHTML = storyList.map(() => '<div class="bar"><i></i></div>').join('');
+    storyBars = prog.querySelectorAll('.bar');
+
+    document.getElementById('storyView').classList.add('active');
+    playStorySegment(storyIdx);
+  }
+
+  function playStorySegment(i){
+    storyIdx = i;
+    storyPaused = false;
+    storyRemainingMs = 4000;
+    storySegmentStarted = Date.now();
+    clearStoryTimer();
+
+    const item = storyList[i];
+    if(!item){ closeStory(); return; }
+
+    document.getElementById('storyImg').src = item.img;
+    markStorySeen(item.id);
+
+    storyBars.forEach((b, bi) => {
+      const fill = b.querySelector('i');
+      b.classList.remove('playing', 'done');
+      if(fill){
+        fill.style.animation = 'none';
+        fill.style.transition = 'none';
+        fill.style.width = bi < i ? '100%' : '0%';
+      }
+      if(bi < i) b.classList.add('done');
     });
 
-    const showAt = (i)=>{
-      document.getElementById('storyImg').src = list[i].img;
-      markStorySeen(list[i].id);
-      bars.forEach((b,bi)=>{
-        b.classList.remove('playing','done');
-        const fill = b.querySelector('i');
-        if(fill){
-          fill.style.animation = 'none';
-          fill.style.width = bi < i ? '100%' : '0%';
-        }
-        if(bi < i) b.classList.add('done');
-        if(bi === i) b.classList.add('playing');
-      });
-      const fill = bars[i]?.querySelector('i');
+    const cur = storyBars[i];
+    const fill = cur?.querySelector('i');
+    if(cur) cur.classList.add('playing');
+    if(fill){
+      void fill.offsetWidth;
+      fill.style.transition = 'width 4s linear';
+      fill.style.width = '100%';
+    }
+
+    storyTimer = setTimeout(() => advanceStory(), 4000);
+  }
+
+  function advanceStory(){
+    if(storyPaused) return;
+    const fill = storyBars[storyIdx]?.querySelector('i');
+    if(fill){ fill.style.transition = 'none'; fill.style.width = '100%'; }
+    storyBars[storyIdx]?.classList.remove('playing');
+    storyBars[storyIdx]?.classList.add('done');
+    if(storyIdx + 1 >= storyList.length){
+      closeStory();
+      return;
+    }
+    playStorySegment(storyIdx + 1);
+  }
+
+  function toggleStoryPause(e){
+    if(e) e.stopPropagation();
+    // não pausar se clicou no X
+    if(e && (e.target.id === 'closeStoryBtn' || e.target.closest('#closeStoryBtn'))) return;
+    if(e && e.target.closest('.story-head .x')) return;
+
+    const fill = storyBars?.[storyIdx]?.querySelector('i');
+    if(!storyPaused){
+      // PAUSAR
+      storyPaused = true;
+      clearStoryTimer();
+      const elapsed = Date.now() - storySegmentStarted;
+      storyRemainingMs = Math.max(200, 4000 - elapsed);
       if(fill){
-        fill.style.width = '0%';
-        void fill.offsetWidth;
-        fill.style.transition = 'width 4s linear';
+        const parentW = fill.parentElement.offsetWidth || 1;
+        const w = fill.getBoundingClientRect().width;
+        const pct = Math.min(100, (w / parentW) * 100);
+        fill.style.transition = 'none';
+        fill.style.width = pct + '%';
+        // recalcula remaining pela % real
+        storyRemainingMs = Math.max(200, 4000 * (1 - pct/100));
+      }
+      // indicador visual leve
+      document.getElementById('storyImg').style.filter = 'brightness(0.85)';
+    } else {
+      // CONTINUAR
+      storyPaused = false;
+      storySegmentStarted = Date.now() - (4000 - storyRemainingMs);
+      if(fill){
+        fill.style.transition = `width ${storyRemainingMs}ms linear`;
         fill.style.width = '100%';
       }
-      storyRemainingMs = 4000;
-      storyPaused = false;
-    };
-
-    const advance = ()=>{
-      if(storyPaused) return;
-      bars[idx]?.classList.remove('playing');
-      bars[idx]?.classList.add('done');
-      const fill = bars[idx]?.querySelector('i');
-      if(fill){ fill.style.transition = 'none'; fill.style.width = '100%'; }
-      idx++;
-      if(idx >= list.length){ closeStory(); return; }
-      showAt(idx);
-      clearTimeout(storyTimer);
-      storyTimer = setTimeout(advance, 4000);
-    };
-    storyAdvanceFn = advance;
-
-    showAt(idx);
-    document.getElementById('storyView').classList.add('active');
-    clearTimeout(storyTimer);
-    storyTimer = setTimeout(advance, 4000);
-
-    // clique = pausar / continuar (mantém visualização única)
-    const storyView = document.getElementById('storyView');
-    storyView.onclick = (e)=>{
-      if(e.target.id === 'closeStoryBtn' || e.target.closest('#closeStoryBtn')) return;
-      if(e.target.closest('.story-head')) return;
-      const fill = bars[idx]?.querySelector('i');
-      if(!storyPaused){
-        storyPaused = true;
-        clearTimeout(storyTimer);
-        if(fill){
-          const computed = getComputedStyle(fill).width;
-          const parentW = fill.parentElement.offsetWidth || 1;
-          const pct = (parseFloat(computed) / parentW) * 100;
-          fill.style.transition = 'none';
-          fill.style.width = pct + '%';
-          storyRemainingMs = Math.max(300, 4000 * (1 - pct/100));
-        }
-      } else {
-        storyPaused = false;
-        if(fill){
-          fill.style.transition = `width ${storyRemainingMs}ms linear`;
-          fill.style.width = '100%';
-        }
-        clearTimeout(storyTimer);
-        storyTimer = setTimeout(advance, storyRemainingMs);
-      }
-    };
+      document.getElementById('storyImg').style.filter = '';
+      clearStoryTimer();
+      storyTimer = setTimeout(() => advanceStory(), storyRemainingMs);
+    }
   }
+
   function closeStory(){
     document.getElementById('storyView').classList.remove('active');
-    clearTimeout(storyTimer);
+    clearStoryTimer();
     storyPaused = false;
-    storyAdvanceFn = null;
-    renderStories(); // some da barra os já vistos
+    document.getElementById('storyImg').style.filter = '';
+    renderStories();
   }
+
   document.getElementById('closeStoryBtn').onclick = (e)=>{ e.stopPropagation(); closeStory(); };
+  // pause / play ao tocar na área do story
+  document.getElementById('storyView').addEventListener('click', toggleStoryPause);
+  document.getElementById('storyImg')?.addEventListener('click', toggleStoryPause);
+
 
   // ---------- Câmera ----------
   async function openCamera(){
